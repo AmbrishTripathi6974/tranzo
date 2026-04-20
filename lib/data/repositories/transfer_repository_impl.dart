@@ -1,4 +1,7 @@
 import '../../domain/entities/transfer_task.dart';
+import '../../domain/entities/transfer_entity.dart';
+import '../../domain/entities/user_entity.dart';
+import '../../domain/entities/file_entity.dart';
 import '../../domain/repositories/transfer_repository.dart';
 import '../../transfer_engine/download/download_manager.dart';
 import '../../transfer_engine/retry/retry_policy.dart';
@@ -44,5 +47,27 @@ class TransferRepositoryImpl implements TransferRepository {
     // Intentionally kept as wiring-only scaffold.
     final Object _ = (_uploadManager, _downloadManager, _retryPolicy, transferId);
     throw UnimplementedError('Retry orchestration is not implemented yet.');
+  }
+
+  @override
+  Future<TransferEntity> sendFiles({
+    required UserEntity sender,
+    required UserEntity receiver,
+    required List<FileEntity> files,
+  }) async {
+    final Object _ = (sender, receiver, files);
+    throw UnimplementedError('Send files is not implemented yet.');
+  }
+
+  @override
+  Future<TransferEntity> receiveFiles(String transferId) async {
+    final Object _ = transferId;
+    throw UnimplementedError('Receive files is not implemented yet.');
+  }
+
+  @override
+  Future<List<TransferEntity>> getTransferHistory(String userId) async {
+    final Object _ = userId;
+    throw UnimplementedError('Transfer history is not implemented yet.');
   }
 }
