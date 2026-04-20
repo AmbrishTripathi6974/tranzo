@@ -1,0 +1,94 @@
+---
+description: Tranzo offline-first transfer system — Clean Architecture, intent model, state machine, constraints (always read before adding or changing code).
+alwaysApply: true
+---
+
+# Tranzo — production transfer system (mandatory)
+
+You are working on a **production-grade, scalable, offline-first file sharing system**. Follow this spec on **every** change that touches transfers, storage, network, or Firebase.
+
+## Non-negotiable architecture
+
+Strict layer flow (never skip or merge layers):
+
+`UI → BLoC → UseCase → Repository → Service → Data Source`
+
+- **UI**: rendering only  
+- **BLoC**: state + orchestration  
+- **UseCases**: business logic  
+- **Repository**: abstraction  
+- **Services**: Firebase / network / local DB (e.g. Isar)
+
+Do **not** create new files unless absolutely necessary; prefer modifying the existing structure.
+
+Before writing code, **briefly state**: what you will do, **which layer** you touch, and **why**. Do not assume missing context — **ask** if unclear. Use only realistic Flutter / Firebase / Dart APIs (no invented APIs).
+
+## System intent
+
+This is **not** a simple file uploader. It is **intent-aware**, **offline-first**, and **lifecycle-driven**.
+
+Core principle: **not all queued tasks should survive indefinitely.**
+
+## Transfer model (every transfer must include)
+
+- `transferId`, `senderId`, `receiverCode`
+- `fileName`, `fileSize`, `fileHash`
+- `status`, `storagePath`
+- `createdAt`, `expiresAt` (cloud TTL)
+- `intentExpiry` (short-term expiry metadata as designed in app)
+- `intentScore` (dynamic)
+
+## State machine (allowed states ONLY)
+
+Do **not** invent new states:
+
+`Initial` → `Pending` → `WaitingForNetwork` → `EvaluatingIntent` → `Uploading` → `Completed` | `Failed` | `Expired`
+
+(Use exactly these names / semantics as implemented in code.)
+
+## Intent-aware logic (critical)
+
+- Do **not** use naive “time-only” expiry as the sole driver of whether work stays alive.
+- **`intentScore`** depends on: user retry actions, time elapsed, file size, network state, app foreground/background (as implemented).
+- **Expire / drop** queued or resumable work when **`intentScore` is below the configured threshold** (not only when a raw timer fires).
+
+## Retry system
+
+Classify retries:
+
+- **AUTO** — lower priority  
+- **USER_INITIATED** — higher priority  
+
+**Priority queue (highest first):**
+
+1. User-initiated  
+2. Active transfers  
+3. Passive queued  
+
+## Network-aware behavior
+
+- Do **not** upload large files on **mobile data** without explicit user confirmation (when the app enforces this).
+- **Pause** when there is no usable network.
+- **Resume** only if **intent is still valid** (`intentScore` / policy checks).
+
+## Offline storage (Isar)
+
+- Persist transfers locally.
+- **Clean stale entries** when appropriate, e.g. transfers that are **`Pending`** and have **low `intentScore`** (per product rules), so offline queues do not grow stale forever.
+
+## Firebase
+
+- Prefer **resumable** uploads.
+- Avoid chatty writes: **batch** where sensible; sync **meaningful** progress only (e.g. ~25%, 50%, …).
+
+## Edge cases (always consider)
+
+App killed; network drop mid-upload; duplicate transfer; expired intent; low storage; permission denial.
+
+## Code output discipline
+
+When proposing changes: short explanation → **only relevant** minimal code — no dumping huge unrelated files.
+
+## Quality bar
+
+Correctness and respect for architecture over speed. Staff-level thinking: performance-aware, failure-aware, resource-conscious. Avoid overengineering and random abstractions; no UI-heavy business logic.
