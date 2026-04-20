@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../app/router/route_names.dart';
 import '../bloc/transfer_bloc.dart';
 import '../bloc/transfer_state.dart';
+import '../router/route_names.dart';
 import '../widgets/transfer_status_card.dart';
 
 class TransferHomePage extends StatelessWidget {

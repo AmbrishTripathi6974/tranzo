@@ -1,28 +1,38 @@
 import 'package:get_it/get_it.dart';
 
-import '../../features/transfer/data/repositories/transfer_repository_impl.dart';
-import '../../features/transfer/data/services/network/transfer_api_service.dart';
-import '../../features/transfer/data/services/storage/file_storage_service.dart';
-import '../../features/transfer/data/transfer_engine/download/download_manager.dart';
-import '../../features/transfer/data/transfer_engine/retry/retry_policy.dart';
-import '../../features/transfer/data/transfer_engine/upload/upload_manager.dart';
-import '../../features/transfer/domain/repositories/transfer_repository.dart';
-import '../../features/transfer/domain/usecases/retry_transfer_usecase.dart';
-import '../../features/transfer/domain/usecases/start_download_usecase.dart';
-import '../../features/transfer/domain/usecases/start_upload_usecase.dart';
-import '../../features/transfer/presentation/bloc/transfer_bloc.dart';
-import '../constants/app_constants.dart';
-import '../network/network_info.dart';
+import '../core/constants/app_constants.dart';
+import '../core/network/network_info.dart';
+import '../data/data_sources/local/transfer_local_data_source.dart';
+import '../data/data_sources/remote/transfer_remote_data_source.dart';
+import '../data/repositories/transfer_repository_impl.dart';
+import '../domain/repositories/transfer_repository.dart';
+import '../domain/usecases/retry_transfer_usecase.dart';
+import '../domain/usecases/start_download_usecase.dart';
+import '../domain/usecases/start_upload_usecase.dart';
+import '../presentation/bloc/transfer_bloc.dart';
+import '../transfer_engine/download/download_manager.dart';
+import '../transfer_engine/retry/retry_policy.dart';
+import '../transfer_engine/upload/upload_manager.dart';
 
 final GetIt sl = GetIt.instance;
 
 Future<void> configureDependencies() async {
+  if (sl.isRegistered<TransferBloc>()) {
+    return;
+  }
+
   // Core
   sl.registerLazySingleton<NetworkInfo>(NetworkInfoImpl.new);
 
-  // Transfer services and engine
-  sl.registerLazySingleton<TransferApiService>(TransferApiServiceImpl.new);
-  sl.registerLazySingleton<FileStorageService>(FileStorageServiceImpl.new);
+  // Transfer data sources
+  sl.registerLazySingleton<TransferRemoteDataSource>(
+    TransferRemoteDataSourceImpl.new,
+  );
+  sl.registerLazySingleton<TransferLocalDataSource>(
+    TransferLocalDataSourceImpl.new,
+  );
+
+  // Transfer engine
   sl.registerLazySingleton<UploadManager>(UploadManager.new);
   sl.registerLazySingleton<DownloadManager>(DownloadManager.new);
   sl.registerLazySingleton<RetryPolicy>(
@@ -32,8 +42,8 @@ Future<void> configureDependencies() async {
   // Repositories
   sl.registerLazySingleton<TransferRepository>(
     () => TransferRepositoryImpl(
-      apiService: sl<TransferApiService>(),
-      storageService: sl<FileStorageService>(),
+      remoteDataSource: sl<TransferRemoteDataSource>(),
+      localDataSource: sl<TransferLocalDataSource>(),
       uploadManager: sl<UploadManager>(),
       downloadManager: sl<DownloadManager>(),
       retryPolicy: sl<RetryPolicy>(),

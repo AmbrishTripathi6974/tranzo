@@ -25,10 +25,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
   final StartDownloadUseCase _startDownload;
   final RetryTransferUseCase _retryTransfer;
 
-  Future<void> _onStarted(
-    TransferStarted event,
-    Emitter<TransferState> emit,
-  ) async {
+  void _onStarted(TransferStarted event, Emitter<TransferState> emit) {
     emit(state.copyWith(status: TransferStatus.idle, message: null));
   }
 
@@ -36,26 +33,33 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     UploadRequested event,
     Emitter<TransferState> emit,
   ) async {
-    emit(state.copyWith(status: TransferStatus.inProgress));
-    await _startUpload(event.task);
-    emit(state.copyWith(status: TransferStatus.success));
+    await _runTransferAction(emit, () => _startUpload(event.task));
   }
 
   Future<void> _onDownloadRequested(
     DownloadRequested event,
     Emitter<TransferState> emit,
   ) async {
-    emit(state.copyWith(status: TransferStatus.inProgress));
-    await _startDownload(event.task);
-    emit(state.copyWith(status: TransferStatus.success));
+    await _runTransferAction(emit, () => _startDownload(event.task));
   }
 
   Future<void> _onRetryRequested(
     RetryRequested event,
     Emitter<TransferState> emit,
   ) async {
-    emit(state.copyWith(status: TransferStatus.inProgress));
-    await _retryTransfer(event.transferId);
-    emit(state.copyWith(status: TransferStatus.success));
+    await _runTransferAction(emit, () => _retryTransfer(event.transferId));
+  }
+
+  Future<void> _runTransferAction(
+    Emitter<TransferState> emit,
+    Future<void> Function() action,
+  ) async {
+    emit(state.copyWith(status: TransferStatus.inProgress, message: null));
+    try {
+      await action();
+      emit(state.copyWith(status: TransferStatus.success, message: null));
+    } catch (error) {
+      emit(state.copyWith(status: TransferStatus.failure, message: '$error'));
+    }
   }
 }

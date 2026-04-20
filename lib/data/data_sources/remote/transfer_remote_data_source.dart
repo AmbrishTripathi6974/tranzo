@@ -1,11 +1,11 @@
 import '../../models/transfer_task_model.dart';
 
-abstract interface class TransferApiService {
+abstract interface class TransferRemoteDataSource {
   Future<void> upload(TransferTaskModel task);
   Future<void> download(TransferTaskModel task);
 }
 
-class TransferApiServiceImpl implements TransferApiService {
+class TransferRemoteDataSourceImpl implements TransferRemoteDataSource {
   @override
   Future<void> upload(TransferTaskModel task) async {
     throw UnimplementedError('Upload API integration is not implemented yet.');

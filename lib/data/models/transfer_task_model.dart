@@ -7,6 +7,14 @@ class TransferTaskModel extends TransferTask {
     required super.totalBytes,
   });
 
+  factory TransferTaskModel.fromEntity(TransferTask task) {
+    return TransferTaskModel(
+      id: task.id,
+      fileName: task.fileName,
+      totalBytes: task.totalBytes,
+    );
+  }
+
   factory TransferTaskModel.fromJson(Map<String, dynamic> json) {
     return TransferTaskModel(
       id: json['id'] as String,

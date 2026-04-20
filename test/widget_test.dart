@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tranzo/app/app.dart';
-import 'package:tranzo/core/di/injection_container.dart';
+import 'package:tranzo/di/injection_container.dart';
+import 'package:tranzo/presentation/app.dart';
 
 void main() {
   testWidgets('App renders transfer home scaffold', (WidgetTester tester) async {
