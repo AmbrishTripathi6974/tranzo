@@ -6,8 +6,8 @@ import '../../domain/repositories/transfer_repository.dart';
 import '../../transfer_engine/download/download_manager.dart';
 import '../../transfer_engine/retry/retry_policy.dart';
 import '../../transfer_engine/upload/upload_manager.dart';
-import '../data_sources/local/transfer_local_data_source.dart';
-import '../data_sources/remote/transfer_remote_data_source.dart';
+import '../datasources/local/transfer_local_data_source.dart';
+import '../datasources/remote/transfer_remote_data_source.dart';
 import '../models/transfer_task_model.dart';
 
 class TransferRepositoryImpl implements TransferRepository {

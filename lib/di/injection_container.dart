@@ -2,8 +2,8 @@ import 'package:get_it/get_it.dart';
 
 import '../core/constants/app_constants.dart';
 import '../core/network/network_info.dart';
-import '../data/data_sources/local/transfer_local_data_source.dart';
-import '../data/data_sources/remote/transfer_remote_data_source.dart';
+import '../data/datasources/local/transfer_local_data_source.dart';
+import '../data/datasources/remote/transfer_remote_data_source.dart';
 import '../data/repositories/transfer_repository_impl.dart';
 import '../domain/repositories/transfer_repository.dart';
 import '../domain/usecases/retry_transfer_usecase.dart';

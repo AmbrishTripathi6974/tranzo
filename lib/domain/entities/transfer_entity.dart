@@ -9,7 +9,7 @@ class TransferEntity extends Equatable {
     required this.receiverId,
     required this.status,
     required this.createdAt,
-    required this.expiresAt,
+    this.expiresAt,
   });
 
   final String id;
@@ -17,7 +17,7 @@ class TransferEntity extends Equatable {
   final String receiverId;
   final TransferStatus status;
   final DateTime createdAt;
-  final DateTime expiresAt;
+  final DateTime? expiresAt;
 
   @override
   List<Object?> get props => <Object?>[
