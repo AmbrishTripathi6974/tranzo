@@ -1,6 +1,8 @@
 import 'package:get_it/get_it.dart';
+import 'package:isar_community/isar.dart';
 
 import '../core/constants/app_constants.dart';
+import '../core/database/isar/isar_database.dart';
 import '../core/network/network_info.dart';
 import '../data/datasources/local/transfer_local_data_source.dart';
 import '../data/datasources/remote/transfer_remote_data_source.dart';
@@ -17,6 +19,15 @@ import '../transfer_engine/state/transfer_state_manager.dart';
 import '../transfer_engine/upload/upload_manager.dart';
 
 final GetIt sl = GetIt.instance;
+
+/// Opens Isar and registers it with GetIt. Call from [main] after
+/// [configureDependencies]; omit in tests that do not exercise local DB code.
+Future<void> registerIsarDatabase() async {
+  if (sl.isRegistered<Isar>()) {
+    return;
+  }
+  sl.registerSingleton<Isar>(await openTranzoIsar());
+}
 
 Future<void> configureDependencies() async {
   if (sl.isRegistered<TransferBloc>()) {

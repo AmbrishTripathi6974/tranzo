@@ -6,5 +6,6 @@ import 'presentation/app.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await configureDependencies();
+  await registerIsarDatabase();
   runApp(const App());
 }
