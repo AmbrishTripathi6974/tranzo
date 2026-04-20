@@ -4,7 +4,7 @@ import '../../domain/entities/user_entity.dart';
 import '../../domain/entities/file_entity.dart';
 import '../../domain/repositories/transfer_repository.dart';
 import '../../transfer_engine/download/download_manager.dart';
-import '../../transfer_engine/retry/retry_policy.dart';
+import '../../transfer_engine/retry/retry_queue.dart';
 import '../../transfer_engine/upload/upload_manager.dart';
 import '../datasources/local/transfer_local_data_source.dart';
 import '../datasources/remote/transfer_remote_data_source.dart';
@@ -16,18 +16,18 @@ class TransferRepositoryImpl implements TransferRepository {
     required TransferLocalDataSource localDataSource,
     required UploadManager uploadManager,
     required DownloadManager downloadManager,
-    required RetryPolicy retryPolicy,
+    required RetryQueue retryQueue,
   }) : _remoteDataSource = remoteDataSource,
        _localDataSource = localDataSource,
        _uploadManager = uploadManager,
        _downloadManager = downloadManager,
-       _retryPolicy = retryPolicy;
+       _retryQueue = retryQueue;
 
   final TransferRemoteDataSource _remoteDataSource;
   final TransferLocalDataSource _localDataSource;
   final UploadManager _uploadManager;
   final DownloadManager _downloadManager;
-  final RetryPolicy _retryPolicy;
+  final RetryQueue _retryQueue;
 
   @override
   Future<void> startUpload(TransferTask task) async {
@@ -45,7 +45,7 @@ class TransferRepositoryImpl implements TransferRepository {
   @override
   Future<void> retryTransfer(String transferId) async {
     // Intentionally kept as wiring-only scaffold.
-    final Object _ = (_uploadManager, _downloadManager, _retryPolicy, transferId);
+    final Object _ = (_uploadManager, _downloadManager, _retryQueue, transferId);
     throw UnimplementedError('Retry orchestration is not implemented yet.');
   }
 

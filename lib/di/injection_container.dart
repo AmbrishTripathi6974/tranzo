@@ -10,8 +10,10 @@ import '../domain/usecases/retry_transfer_usecase.dart';
 import '../domain/usecases/start_download_usecase.dart';
 import '../domain/usecases/start_upload_usecase.dart';
 import '../presentation/bloc/transfer_bloc.dart';
+import '../transfer_engine/chunking/chunk_manager.dart';
 import '../transfer_engine/download/download_manager.dart';
-import '../transfer_engine/retry/retry_policy.dart';
+import '../transfer_engine/retry/retry_queue.dart';
+import '../transfer_engine/state/transfer_state_manager.dart';
 import '../transfer_engine/upload/upload_manager.dart';
 
 final GetIt sl = GetIt.instance;
@@ -32,11 +34,25 @@ Future<void> configureDependencies() async {
     TransferLocalDataSourceImpl.new,
   );
 
-  // Transfer engine
-  sl.registerLazySingleton<UploadManager>(UploadManager.new);
-  sl.registerLazySingleton<DownloadManager>(DownloadManager.new);
-  sl.registerLazySingleton<RetryPolicy>(
-    () => const RetryPolicy(maxRetries: AppConstants.defaultMaxRetryCount),
+  // Transfer engine (shared chunk / state / retry for resumable sessions)
+  sl.registerLazySingleton<ChunkManager>(() => const ChunkManager());
+  sl.registerLazySingleton<TransferStateManager>(TransferStateManager.new);
+  sl.registerLazySingleton<RetryQueue>(
+    () => RetryQueue(maxRetries: AppConstants.defaultMaxRetryCount),
+  );
+  sl.registerLazySingleton<UploadManager>(
+    () => UploadManager(
+      chunkManager: sl<ChunkManager>(),
+      stateManager: sl<TransferStateManager>(),
+      retryQueue: sl<RetryQueue>(),
+    ),
+  );
+  sl.registerLazySingleton<DownloadManager>(
+    () => DownloadManager(
+      chunkManager: sl<ChunkManager>(),
+      stateManager: sl<TransferStateManager>(),
+      retryQueue: sl<RetryQueue>(),
+    ),
   );
 
   // Repositories
@@ -46,7 +62,7 @@ Future<void> configureDependencies() async {
       localDataSource: sl<TransferLocalDataSource>(),
       uploadManager: sl<UploadManager>(),
       downloadManager: sl<DownloadManager>(),
-      retryPolicy: sl<RetryPolicy>(),
+      retryQueue: sl<RetryQueue>(),
     ),
   );
 
