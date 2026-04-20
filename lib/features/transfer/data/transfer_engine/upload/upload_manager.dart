@@ -1,0 +1,3 @@
+class UploadManager {
+  const UploadManager();
+}
