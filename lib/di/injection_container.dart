@@ -5,6 +5,7 @@ import '../core/constants/app_constants.dart';
 import '../core/database/isar/isar_database.dart';
 import '../core/network/network_info.dart';
 import '../core/services/auth_service.dart';
+import '../core/services/realtime_service.dart';
 import '../core/services/supabase_client.dart';
 import '../core/services/transfer_service.dart';
 import '../data/datasources/local/transfer_local_data_source.dart';
@@ -57,13 +58,16 @@ Future<void> configureDependencies() async {
   sl.registerLazySingleton<TransferService>(
     () => TransferService(sl<SupabaseClientHandle>().client),
   );
+  sl.registerLazySingleton<RealtimeService>(
+    () => RealtimeService(sl<SupabaseClientHandle>().client),
+  );
 
   // Transfer data sources
   sl.registerLazySingleton<TransferRemoteDataSource>(
     () => TransferRemoteDataSourceImpl(sl<TransferService>()),
   );
   sl.registerLazySingleton<TransferLocalDataSource>(
-    TransferLocalDataSourceImpl.new,
+    () => TransferLocalDataSourceImpl(sl<Isar>()),
   );
 
   // Transfer engine (shared chunk / state / retry for resumable sessions)
@@ -96,6 +100,7 @@ Future<void> configureDependencies() async {
       remoteDataSource: sl<TransferRemoteDataSource>(),
       localDataSource: sl<TransferLocalDataSource>(),
       transferService: sl<TransferService>(),
+      realtimeService: sl<RealtimeService>(),
       isar: sl<Isar>(),
       uploadManager: sl<UploadManager>(),
       downloadManager: sl<DownloadManager>(),

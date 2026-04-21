@@ -1,6 +1,8 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'dart:async';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../domain/entities/incoming_transfer_offer.dart';
 import '../../../domain/usecases/retry_transfer_usecase.dart';
 import '../../../domain/usecases/send_files_usecase.dart';
 import '../../../domain/usecases/start_download_usecase.dart';
@@ -24,12 +26,17 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     on<TransferDownloadRequested>(_onDownloadRequested);
     on<TransferRetryRequested>(_onRetryRequested);
     on<TransferBatchUploadRequested>(_onBatchUploadRequested);
+    on<IncomingTransferListeningRequested>(_onIncomingListeningRequested);
+    on<IncomingTransferReceived>(_onIncomingTransferReceived);
+    on<IncomingTransferAccepted>(_onIncomingTransferAccepted);
+    on<IncomingTransferRejected>(_onIncomingTransferRejected);
   }
 
   final StartUploadUseCase _startUpload;
   final StartDownloadUseCase _startDownload;
   final RetryTransferUseCase _retryTransfer;
   final SendFiles _sendFiles;
+  StreamSubscription<IncomingTransferOffer>? _incomingSubscription;
 
   Future<void> _onUploadRequested(
     TransferUploadRequested event,
@@ -154,5 +161,87 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
         state.copyWith(status: TransferStatus.error, errorMessage: '$error'),
       );
     }
+  }
+
+  Future<void> _onIncomingListeningRequested(
+    IncomingTransferListeningRequested event,
+    Emitter<TransferState> emit,
+  ) async {
+    await _incomingSubscription?.cancel();
+    _incomingSubscription = _sendFiles
+        .listenIncoming(receiverId: event.receiverId)
+        .listen((incoming) {
+          add(IncomingTransferReceived(incoming));
+        });
+  }
+
+  void _onIncomingTransferReceived(
+    IncomingTransferReceived event,
+    Emitter<TransferState> emit,
+  ) {
+    final bool alreadyListed = state.incomingTransfers.any(
+      (item) => item.transferId == event.transfer.transferId,
+    );
+    if (alreadyListed) {
+      return;
+    }
+    emit(
+      state.copyWith(
+        incomingTransfers: <IncomingTransferOffer>[
+          ...state.incomingTransfers,
+          event.transfer,
+        ],
+      ),
+    );
+  }
+
+  Future<void> _onIncomingTransferAccepted(
+    IncomingTransferAccepted event,
+    Emitter<TransferState> emit,
+  ) async {
+    emit(
+      state.copyWith(status: TransferStatus.loading, clearErrorMessage: true),
+    );
+    try {
+      await _sendFiles.acceptIncoming(transfer: event.transfer);
+      emit(
+        state.copyWith(
+          status: TransferStatus.success,
+          incomingTransfers: state.incomingTransfers
+              .where((item) => item.transferId != event.transfer.transferId)
+              .toList(growable: false),
+        ),
+      );
+    } catch (error) {
+      emit(
+        state.copyWith(status: TransferStatus.error, errorMessage: '$error'),
+      );
+    }
+  }
+
+  Future<void> _onIncomingTransferRejected(
+    IncomingTransferRejected event,
+    Emitter<TransferState> emit,
+  ) async {
+    try {
+      await _sendFiles.rejectIncoming(transferId: event.transferId);
+      emit(
+        state.copyWith(
+          incomingTransfers: state.incomingTransfers
+              .where((item) => item.transferId != event.transferId)
+              .toList(growable: false),
+        ),
+      );
+    } catch (error) {
+      emit(
+        state.copyWith(status: TransferStatus.error, errorMessage: '$error'),
+      );
+    }
+  }
+
+  @override
+  Future<void> close() async {
+    await _incomingSubscription?.cancel();
+    return super.close();
   }
 }

@@ -10,6 +10,11 @@ abstract interface class TransferRemoteDataSource {
     required int chunkIndex,
     required Stream<List<int>> byteStream,
   });
+  Future<List<int>> downloadChunk({
+    required String sessionId,
+    required String fileId,
+    required int chunkIndex,
+  });
 }
 
 class TransferRemoteDataSourceImpl implements TransferRemoteDataSource {
@@ -41,6 +46,19 @@ class TransferRemoteDataSourceImpl implements TransferRemoteDataSource {
       fileId: fileId,
       chunkIndex: chunkIndex,
       byteStream: byteStream,
+    );
+  }
+
+  @override
+  Future<List<int>> downloadChunk({
+    required String sessionId,
+    required String fileId,
+    required int chunkIndex,
+  }) async {
+    return _transferService.downloadTransferChunk(
+      sessionId: sessionId,
+      fileId: fileId,
+      chunkIndex: chunkIndex,
     );
   }
 }

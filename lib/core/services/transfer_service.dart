@@ -71,6 +71,53 @@ final class TransferService {
       throw AppException(e.message);
     }
   }
+
+  Future<List<TransferSessionRecord>> getIncomingTransfers(
+    String receiverId,
+  ) async {
+    try {
+      final List<dynamic> rows = await _client
+          .from(_transferSessionsTable)
+          .select()
+          .eq('receiver_id', receiverId)
+          .order('created_at', ascending: false);
+      return rows
+          .map(
+            (dynamic row) =>
+                TransferSessionRecord.fromRow(row as Map<String, dynamic>),
+          )
+          .toList(growable: false);
+    } on PostgrestException catch (e) {
+      throw AppException(e.message);
+    }
+  }
+
+  Future<void> updateTransferStatus({
+    required String transferId,
+    required String status,
+  }) async {
+    try {
+      await _client
+          .from(_transferSessionsTable)
+          .update(<String, dynamic>{'status': status})
+          .eq('transfer_id', transferId);
+    } on PostgrestException catch (e) {
+      throw AppException(e.message);
+    }
+  }
+
+  Future<Uint8List> downloadTransferChunk({
+    required String sessionId,
+    required String fileId,
+    required int chunkIndex,
+  }) async {
+    final String objectPath = '$sessionId/$fileId/chunk_$chunkIndex.part';
+    try {
+      return await _client.storage.from(_chunksBucket).download(objectPath);
+    } on StorageException catch (e) {
+      throw AppException(e.message);
+    }
+  }
 }
 
 final class TransferSessionPayload {

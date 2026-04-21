@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 import '../../../domain/entities/selected_transfer_file.dart';
+import '../../../domain/entities/incoming_transfer_offer.dart';
 import '../../../domain/entities/transfer_task.dart';
 
 sealed class TransferEvent extends Equatable {
@@ -50,4 +51,40 @@ class TransferBatchUploadRequested extends TransferEvent {
 
   @override
   List<Object?> get props => <Object?>[senderId, recipientCode, files];
+}
+
+class IncomingTransferListeningRequested extends TransferEvent {
+  const IncomingTransferListeningRequested(this.receiverId);
+
+  final String receiverId;
+
+  @override
+  List<Object?> get props => <Object?>[receiverId];
+}
+
+class IncomingTransferReceived extends TransferEvent {
+  const IncomingTransferReceived(this.transfer);
+
+  final IncomingTransferOffer transfer;
+
+  @override
+  List<Object?> get props => <Object?>[transfer];
+}
+
+class IncomingTransferAccepted extends TransferEvent {
+  const IncomingTransferAccepted(this.transfer);
+
+  final IncomingTransferOffer transfer;
+
+  @override
+  List<Object?> get props => <Object?>[transfer];
+}
+
+class IncomingTransferRejected extends TransferEvent {
+  const IncomingTransferRejected(this.transferId);
+
+  final String transferId;
+
+  @override
+  List<Object?> get props => <Object?>[transferId];
 }

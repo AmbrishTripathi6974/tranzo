@@ -2,6 +2,7 @@ import '../entities/file_entity.dart';
 import '../entities/selected_transfer_file.dart';
 import '../entities/transfer_batch_progress.dart';
 import '../entities/transfer_entity.dart';
+import '../entities/incoming_transfer_offer.dart';
 import '../entities/user_entity.dart';
 import '../repositories/transfer_repository.dart';
 
@@ -32,5 +33,17 @@ class SendFiles {
       recipientCode: recipientCode,
       files: files,
     );
+  }
+
+  Stream<IncomingTransferOffer> listenIncoming({required String receiverId}) {
+    return _repository.listenIncomingTransfers(receiverId: receiverId);
+  }
+
+  Future<void> acceptIncoming({required IncomingTransferOffer transfer}) {
+    return _repository.acceptIncomingTransfer(transfer: transfer);
+  }
+
+  Future<void> rejectIncoming({required String transferId}) {
+    return _repository.rejectIncomingTransfer(transferId: transferId);
   }
 }

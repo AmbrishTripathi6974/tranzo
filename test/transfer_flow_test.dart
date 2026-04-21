@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tranzo/core/constants/app_constants.dart';
 import 'package:tranzo/core/errors/exceptions.dart';
 import 'package:tranzo/domain/entities/file_entity.dart';
+import 'package:tranzo/domain/entities/incoming_transfer_offer.dart';
 import 'package:tranzo/domain/entities/selected_transfer_file.dart';
 import 'package:tranzo/domain/entities/transfer_batch_progress.dart';
 import 'package:tranzo/domain/entities/transfer_entity.dart';
@@ -101,8 +102,18 @@ void main() {
 
 class _FakeTransferRepository implements TransferRepository {
   @override
+  Future<void> acceptIncomingTransfer({
+    required IncomingTransferOffer transfer,
+  }) async {}
+
+  @override
   Future<List<TransferEntity>> getTransferHistory(String userId) async =>
       const <TransferEntity>[];
+
+  @override
+  Stream<IncomingTransferOffer> listenIncomingTransfers({
+    required String receiverId,
+  }) => const Stream<IncomingTransferOffer>.empty();
 
   @override
   Future<TransferEntity> receiveFiles(String transferId) {
@@ -111,6 +122,9 @@ class _FakeTransferRepository implements TransferRepository {
 
   @override
   Future<void> retryTransfer(String transferId) async {}
+
+  @override
+  Future<void> rejectIncomingTransfer({required String transferId}) async {}
 
   @override
   Future<TransferEntity> sendFiles({

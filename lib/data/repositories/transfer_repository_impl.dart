@@ -1,18 +1,23 @@
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import '../../domain/entities/transfer_task.dart';
 import '../../domain/entities/selected_transfer_file.dart';
 import '../../domain/entities/transfer_batch_progress.dart';
+import '../../domain/entities/incoming_transfer_offer.dart';
 import '../../domain/entities/transfer_entity.dart';
 import '../../domain/entities/transfer_status.dart';
+import '../../domain/entities/file_status.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/entities/file_entity.dart';
 import '../../domain/repositories/transfer_repository.dart';
 import '../../core/database/isar/collections/transfer_collection.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/exceptions.dart';
+import '../../core/services/realtime_service.dart';
 import '../../core/services/transfer_service.dart';
 import 'package:isar_community/isar.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../transfer_engine/download/download_manager.dart';
 import '../../transfer_engine/retry/retry_queue.dart';
 import '../../transfer_engine/chunking/chunk_manager.dart';
@@ -27,6 +32,7 @@ class TransferRepositoryImpl implements TransferRepository {
     required TransferRemoteDataSource remoteDataSource,
     required TransferLocalDataSource localDataSource,
     required TransferService transferService,
+    required RealtimeService realtimeService,
     required Isar isar,
     required UploadManager uploadManager,
     required DownloadManager downloadManager,
@@ -34,6 +40,7 @@ class TransferRepositoryImpl implements TransferRepository {
   }) : _remoteDataSource = remoteDataSource,
        _localDataSource = localDataSource,
        _transferService = transferService,
+       _realtimeService = realtimeService,
        _isar = isar,
        _uploadManager = uploadManager,
        _downloadManager = downloadManager,
@@ -42,6 +49,7 @@ class TransferRepositoryImpl implements TransferRepository {
   final TransferRemoteDataSource _remoteDataSource;
   final TransferLocalDataSource _localDataSource;
   final TransferService _transferService;
+  final RealtimeService _realtimeService;
   final Isar _isar;
   final UploadManager _uploadManager;
   final DownloadManager _downloadManager;
@@ -136,6 +144,198 @@ class TransferRepositoryImpl implements TransferRepository {
 
     throw const AppException(
       'Transfer is not available locally and remote fetch is not configured.',
+    );
+  }
+
+  @override
+  Stream<IncomingTransferOffer> listenIncomingTransfers({
+    required String receiverId,
+  }) async* {
+    final List<TransferSessionRecord> initial = await _transferService
+        .getIncomingTransfers(receiverId);
+    for (final TransferSessionRecord row in initial) {
+      final IncomingTransferOffer? parsed = _mapRecordToIncomingOffer(row);
+      if (parsed == null) {
+        continue;
+      }
+      if (await _localDataSource.transferExists(parsed.transferId)) {
+        continue;
+      }
+      await _localDataSource.upsertIncomingTransfer(
+        transferId: parsed.transferId,
+        senderId: parsed.senderId,
+        receiverId: parsed.receiverId,
+        fileId: parsed.fileId,
+        fileName: parsed.fileName,
+        fileSize: parsed.fileSize,
+        fileHash: parsed.fileHash,
+        storagePath: parsed.storagePath,
+        createdAt: parsed.createdAt,
+        status: TransferStatus.pending,
+      );
+      yield parsed;
+    }
+
+    await for (final Map<String, dynamic> payload
+        in _realtimeService.listenIncomingTransfers(receiverId: receiverId)) {
+      final IncomingTransferOffer? offer = _mapPayloadToIncomingOffer(payload);
+      if (offer == null) {
+        continue;
+      }
+      final bool exists = await _localDataSource.transferExists(
+        offer.transferId,
+      );
+      if (exists) {
+        continue;
+      }
+      await _localDataSource.upsertIncomingTransfer(
+        transferId: offer.transferId,
+        senderId: offer.senderId,
+        receiverId: offer.receiverId,
+        fileId: offer.fileId,
+        fileName: offer.fileName,
+        fileSize: offer.fileSize,
+        fileHash: offer.fileHash,
+        storagePath: offer.storagePath,
+        createdAt: offer.createdAt,
+        status: TransferStatus.pending,
+      );
+      yield offer;
+    }
+  }
+
+  @override
+  Future<void> acceptIncomingTransfer({
+    required IncomingTransferOffer transfer,
+  }) async {
+    if (await _localDataSource.fileHashExists(transfer.fileHash)) {
+      await _localDataSource.updateTransferStatus(
+        transfer.transferId,
+        TransferStatus.completed,
+      );
+      await _localDataSource.updateFileStatusByTransferId(
+        transfer.transferId,
+        FileStatus.completed,
+      );
+      await _transferService.updateTransferStatus(
+        transferId: transfer.transferId,
+        status: TransferStatus.completed.name,
+      );
+      return;
+    }
+
+    await _localDataSource.updateTransferStatus(
+      transfer.transferId,
+      TransferStatus.downloading,
+    );
+    await _localDataSource.updateFileStatusByTransferId(
+      transfer.transferId,
+      FileStatus.uploading,
+    );
+    await _transferService.updateTransferStatus(
+      transferId: transfer.transferId,
+      status: TransferStatus.downloading.name,
+    );
+
+    final TransferTask task = TransferTask(
+      id: transfer.transferId,
+      fileName: transfer.fileName,
+      totalBytes: transfer.fileSize,
+    );
+    final List<ChunkDescriptor> chunks = _downloadManager.chunkPlanFor(task);
+    _downloadManager.registerSession(
+      TransferResumeState.fromTask(
+        task,
+        direction: TransferSessionDirection.download,
+      ),
+    );
+
+    final List<int> assembled = <int>[];
+    for (final ChunkDescriptor chunk in chunks) {
+      int attempt = 0;
+      late List<int> bytes;
+      while (true) {
+        try {
+          bytes = await _remoteDataSource.downloadChunk(
+            sessionId: transfer.transferId,
+            fileId: transfer.fileId,
+            chunkIndex: chunk.index,
+          );
+          break;
+        } catch (_) {
+          if (!_retryQueue.canRetryAgain(attempt)) {
+            rethrow;
+          }
+          _retryQueue.schedule(
+            id: transfer.transferId,
+            initiator: RetryInitiator.auto,
+            attempt: attempt,
+          );
+          final Duration delay = _retryQueue.backoffAfterAttempt(attempt);
+          attempt += 1;
+          await Future<void>.delayed(delay);
+        }
+      }
+      assembled.addAll(bytes);
+      _downloadManager.acknowledgeChunkComplete(
+        transfer.transferId,
+        chunk.index,
+      );
+    }
+
+    final String digest = sha256.convert(assembled).toString();
+    if (digest != transfer.fileHash) {
+      await _localDataSource.updateTransferStatus(
+        transfer.transferId,
+        TransferStatus.failed,
+      );
+      await _localDataSource.updateFileStatusByTransferId(
+        transfer.transferId,
+        FileStatus.corrupted,
+      );
+      await _transferService.updateTransferStatus(
+        transferId: transfer.transferId,
+        status: TransferStatus.failed.name,
+      );
+      throw const AppException(
+        'Received file is corrupted (SHA-256 mismatch).',
+      );
+    }
+
+    final Directory appDir = await getApplicationDocumentsDirectory();
+    final File target = File(
+      '${appDir.path}${Platform.pathSeparator}${transfer.fileName}',
+    );
+    await target.writeAsBytes(assembled, flush: true);
+
+    await _localDataSource.updateTransferStatus(
+      transfer.transferId,
+      TransferStatus.completed,
+    );
+    await _localDataSource.updateFileStatusByTransferId(
+      transfer.transferId,
+      FileStatus.completed,
+    );
+    await _transferService.updateTransferStatus(
+      transferId: transfer.transferId,
+      status: TransferStatus.completed.name,
+    );
+    await _downloadManager.finalizeSession(transfer.transferId);
+  }
+
+  @override
+  Future<void> rejectIncomingTransfer({required String transferId}) async {
+    await _localDataSource.updateTransferStatus(
+      transferId,
+      TransferStatus.cancelled,
+    );
+    await _localDataSource.updateFileStatusByTransferId(
+      transferId,
+      FileStatus.failed,
+    );
+    await _transferService.updateTransferStatus(
+      transferId: transferId,
+      status: TransferStatus.cancelled.name,
     );
   }
 
@@ -339,5 +539,47 @@ class TransferRepositoryImpl implements TransferRepository {
       return;
     }
     progress[index] = next;
+  }
+
+  IncomingTransferOffer? _mapRecordToIncomingOffer(
+    TransferSessionRecord record,
+  ) {
+    return _mapPayloadToIncomingOffer(record.row);
+  }
+
+  IncomingTransferOffer? _mapPayloadToIncomingOffer(
+    Map<String, dynamic> payload,
+  ) {
+    final String? transferId = payload['transfer_id'] as String?;
+    final String? senderId = payload['sender_id'] as String?;
+    final String? receiverId = payload['receiver_id'] as String?;
+    final String? fileName = payload['file_name'] as String?;
+    final int? fileSize = payload['file_size'] as int?;
+    final String? fileHash = payload['file_hash'] as String?;
+    if (transferId == null ||
+        senderId == null ||
+        receiverId == null ||
+        fileName == null ||
+        fileSize == null ||
+        fileHash == null) {
+      return null;
+    }
+    final String fileId =
+        (payload['file_id'] as String?) ?? '$transferId-$fileName';
+    final String storagePath =
+        (payload['storage_path'] as String?) ?? '$transferId/$fileId';
+    final String createdAtRaw =
+        (payload['created_at'] as String?) ?? DateTime.now().toIso8601String();
+    return IncomingTransferOffer(
+      transferId: transferId,
+      senderId: senderId,
+      receiverId: receiverId,
+      fileId: fileId,
+      fileName: fileName,
+      fileSize: fileSize,
+      fileHash: fileHash,
+      storagePath: storagePath,
+      createdAt: DateTime.tryParse(createdAtRaw) ?? DateTime.now(),
+    );
   }
 }
