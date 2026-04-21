@@ -1,0 +1,57 @@
+import 'package:isar_community/isar.dart';
+
+import '../../core/database/isar/collections/user_collection.dart';
+import '../../core/services/auth_service.dart';
+import '../../domain/entities/user_entity.dart';
+import '../../domain/repositories/auth_repository.dart';
+import '../models/user_model.dart';
+
+class AuthRepositoryImpl implements AuthRepository {
+  const AuthRepositoryImpl({
+    required AuthService authService,
+    required Isar isar,
+  }) : _authService = authService,
+       _isar = isar;
+
+  final AuthService _authService;
+  final Isar _isar;
+
+  @override
+  Future<UserEntity> createUser({
+    required String shortCode,
+    required String username,
+  }) async {
+    final Object _ = shortCode;
+    final result = await _authService.createAnonymousUserWithShortCode();
+    final userModel = UserModel(
+      id: result.userId,
+      shortCode: result.shortCode,
+      username: username,
+    );
+
+    await _isar.writeTxn(() async {
+      final userCollection = UserCollection()
+        ..supabaseUserId = userModel.id
+        ..displayName = userModel.username
+        ..updatedAt = DateTime.now();
+      await _isar.userCollections.put(userCollection);
+    });
+
+    return userModel.toEntity();
+  }
+
+  @override
+  Future<UserEntity?> getCurrentUser() async {
+    final UserCollection? cached = await _isar.userCollections.where().findFirst();
+    if (cached == null) {
+      return null;
+    }
+
+    final userModel = UserModel(
+      id: cached.supabaseUserId,
+      shortCode: '',
+      username: cached.displayName ?? '',
+    );
+    return userModel.toEntity();
+  }
+}

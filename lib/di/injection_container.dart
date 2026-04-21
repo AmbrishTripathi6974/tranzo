@@ -4,10 +4,17 @@ import 'package:isar_community/isar.dart';
 import '../core/constants/app_constants.dart';
 import '../core/database/isar/isar_database.dart';
 import '../core/network/network_info.dart';
+import '../core/services/auth_service.dart';
+import '../core/services/supabase_client.dart';
+import '../core/services/transfer_service.dart';
 import '../data/datasources/local/transfer_local_data_source.dart';
 import '../data/datasources/remote/transfer_remote_data_source.dart';
+import '../data/repositories/auth_repository_impl.dart';
 import '../data/repositories/transfer_repository_impl.dart';
+import '../domain/repositories/auth_repository.dart';
 import '../domain/repositories/transfer_repository.dart';
+import '../domain/usecases/create_user_usecase.dart';
+import '../domain/usecases/get_current_user_usecase.dart';
 import '../domain/usecases/retry_transfer_usecase.dart';
 import '../domain/usecases/start_download_usecase.dart';
 import '../domain/usecases/start_upload_usecase.dart';
@@ -36,6 +43,15 @@ Future<void> configureDependencies() async {
 
   // Core
   sl.registerLazySingleton<NetworkInfo>(NetworkInfoImpl.new);
+  sl.registerLazySingleton<SupabaseClientHandle>(
+    SupabaseClientHandle.fromEnvironment,
+  );
+  sl.registerLazySingleton<AuthService>(
+    () => AuthService(sl<SupabaseClientHandle>().client),
+  );
+  sl.registerLazySingleton<TransferService>(
+    () => TransferService(sl<SupabaseClientHandle>().client),
+  );
 
   // Transfer data sources
   sl.registerLazySingleton<TransferRemoteDataSource>(
@@ -67,10 +83,15 @@ Future<void> configureDependencies() async {
   );
 
   // Repositories
+  sl.registerLazySingleton<AuthRepository>(
+    () => AuthRepositoryImpl(authService: sl<AuthService>(), isar: sl<Isar>()),
+  );
   sl.registerLazySingleton<TransferRepository>(
     () => TransferRepositoryImpl(
       remoteDataSource: sl<TransferRemoteDataSource>(),
       localDataSource: sl<TransferLocalDataSource>(),
+      transferService: sl<TransferService>(),
+      isar: sl<Isar>(),
       uploadManager: sl<UploadManager>(),
       downloadManager: sl<DownloadManager>(),
       retryQueue: sl<RetryQueue>(),
@@ -78,6 +99,12 @@ Future<void> configureDependencies() async {
   );
 
   // Use cases
+  sl.registerLazySingleton<CreateUser>(
+    () => CreateUser(sl<AuthRepository>()),
+  );
+  sl.registerLazySingleton<GetCurrentUser>(
+    () => GetCurrentUser(sl<AuthRepository>()),
+  );
   sl.registerLazySingleton<StartUploadUseCase>(
     () => StartUploadUseCase(sl<TransferRepository>()),
   );
