@@ -19,7 +19,11 @@ import 'package:tranzo/domain/usecases/start_download_usecase.dart';
 import 'package:tranzo/domain/usecases/start_upload_usecase.dart';
 import 'package:tranzo/domain/usecases/check_transfer_permissions_usecase.dart';
 import 'package:tranzo/domain/usecases/check_storage_availability_usecase.dart';
+import 'package:tranzo/domain/usecases/cancel_transfer_usecase.dart';
 import 'package:tranzo/domain/usecases/evaluate_upload_policy_usecase.dart';
+import 'package:tranzo/domain/usecases/prepare_batch_upload_ui_usecase.dart';
+import 'package:tranzo/domain/usecases/prepare_incoming_transfer_usecase.dart';
+import 'package:tranzo/domain/usecases/validate_transfer_batch_usecase.dart';
 import 'package:tranzo/presentation/bloc/transfer/transfer_bloc.dart';
 import 'package:tranzo/presentation/bloc/transfer/transfer_event.dart';
 import 'package:tranzo/presentation/bloc/transfer/transfer_state.dart';
@@ -46,13 +50,19 @@ void main() {
         startUpload: StartUploadUseCase(repository),
         startDownload: StartDownloadUseCase(repository),
         retryTransfer: RetryTransferUseCase(repository),
+        cancelTransfer: CancelTransferUseCase(repository),
         sendFiles: SendFiles(repository),
-        checkStorageAvailability: CheckStorageAvailability(repository),
-        evaluateUploadPolicy: EvaluateUploadPolicyUseCase(
-          _FakeNetworkInfo(isMobile: false),
+        validateTransferBatch: ValidateTransferBatchUseCase(
+          EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: false)),
         ),
-        checkTransferPermissions: CheckTransferPermissionsUseCase(
-          _FakePermissionService(),
+        prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+          checkTransferPermissions: CheckTransferPermissionsUseCase(
+            _FakePermissionService(),
+          ),
+          checkStorageAvailability: CheckStorageAvailability(repository),
+        ),
+        prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+          CheckTransferPermissionsUseCase(_FakePermissionService()),
         ),
       );
       final List<TransferState> states = <TransferState>[];
@@ -87,13 +97,19 @@ void main() {
         startUpload: StartUploadUseCase(repository),
         startDownload: StartDownloadUseCase(repository),
         retryTransfer: RetryTransferUseCase(repository),
+        cancelTransfer: CancelTransferUseCase(repository),
         sendFiles: SendFiles(repository),
-        checkStorageAvailability: CheckStorageAvailability(repository),
-        evaluateUploadPolicy: EvaluateUploadPolicyUseCase(
-          _FakeNetworkInfo(isMobile: false),
+        validateTransferBatch: ValidateTransferBatchUseCase(
+          EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: false)),
         ),
-        checkTransferPermissions: CheckTransferPermissionsUseCase(
-          _FakePermissionService(),
+        prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+          checkTransferPermissions: CheckTransferPermissionsUseCase(
+            _FakePermissionService(),
+          ),
+          checkStorageAvailability: CheckStorageAvailability(repository),
+        ),
+        prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+          CheckTransferPermissionsUseCase(_FakePermissionService()),
         ),
       );
 
@@ -127,13 +143,21 @@ void main() {
         startUpload: StartUploadUseCase(repository),
         startDownload: StartDownloadUseCase(repository),
         retryTransfer: RetryTransferUseCase(repository),
+        cancelTransfer: CancelTransferUseCase(repository),
         sendFiles: SendFiles(repository),
-        checkStorageAvailability: CheckStorageAvailability(repository),
-        evaluateUploadPolicy: EvaluateUploadPolicyUseCase(
-          _FakeNetworkInfo(isMobile: false),
+        validateTransferBatch: ValidateTransferBatchUseCase(
+          EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: false)),
         ),
-        checkTransferPermissions: CheckTransferPermissionsUseCase(
-          _FakePermissionService(storageGranted: false),
+        prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+          checkTransferPermissions: CheckTransferPermissionsUseCase(
+            _FakePermissionService(storageGranted: false),
+          ),
+          checkStorageAvailability: CheckStorageAvailability(repository),
+        ),
+        prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+          CheckTransferPermissionsUseCase(
+            _FakePermissionService(storageGranted: false),
+          ),
         ),
       );
 
@@ -167,13 +191,19 @@ void main() {
           startUpload: StartUploadUseCase(repository),
           startDownload: StartDownloadUseCase(repository),
           retryTransfer: RetryTransferUseCase(repository),
+          cancelTransfer: CancelTransferUseCase(repository),
           sendFiles: SendFiles(repository),
-          checkStorageAvailability: CheckStorageAvailability(repository),
-          evaluateUploadPolicy: EvaluateUploadPolicyUseCase(
-            _FakeNetworkInfo(isMobile: true),
+          validateTransferBatch: ValidateTransferBatchUseCase(
+            EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: true)),
           ),
-          checkTransferPermissions: CheckTransferPermissionsUseCase(
-            _FakePermissionService(),
+          prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+            checkTransferPermissions: CheckTransferPermissionsUseCase(
+              _FakePermissionService(),
+            ),
+            checkStorageAvailability: CheckStorageAvailability(repository),
+          ),
+          prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+            CheckTransferPermissionsUseCase(_FakePermissionService()),
           ),
         );
 
@@ -206,13 +236,19 @@ void main() {
           startUpload: StartUploadUseCase(repository),
           startDownload: StartDownloadUseCase(repository),
           retryTransfer: RetryTransferUseCase(repository),
+          cancelTransfer: CancelTransferUseCase(repository),
           sendFiles: SendFiles(repository),
-          checkStorageAvailability: CheckStorageAvailability(repository),
-          evaluateUploadPolicy: EvaluateUploadPolicyUseCase(
-            _FakeNetworkInfo(isMobile: true),
+          validateTransferBatch: ValidateTransferBatchUseCase(
+            EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: true)),
           ),
-          checkTransferPermissions: CheckTransferPermissionsUseCase(
-            _FakePermissionService(),
+          prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+            checkTransferPermissions: CheckTransferPermissionsUseCase(
+              _FakePermissionService(),
+            ),
+            checkStorageAvailability: CheckStorageAvailability(repository),
+          ),
+          prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+            CheckTransferPermissionsUseCase(_FakePermissionService()),
           ),
         );
 
@@ -247,13 +283,19 @@ void main() {
           startUpload: StartUploadUseCase(repository),
           startDownload: StartDownloadUseCase(repository),
           retryTransfer: RetryTransferUseCase(repository),
+          cancelTransfer: CancelTransferUseCase(repository),
           sendFiles: SendFiles(repository),
-          checkStorageAvailability: CheckStorageAvailability(repository),
-          evaluateUploadPolicy: EvaluateUploadPolicyUseCase(
-            _FakeNetworkInfo(isMobile: true),
+          validateTransferBatch: ValidateTransferBatchUseCase(
+            EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: true)),
           ),
-          checkTransferPermissions: CheckTransferPermissionsUseCase(
-            _FakePermissionService(),
+          prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+            checkTransferPermissions: CheckTransferPermissionsUseCase(
+              _FakePermissionService(),
+            ),
+            checkStorageAvailability: CheckStorageAvailability(repository),
+          ),
+          prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+            CheckTransferPermissionsUseCase(_FakePermissionService()),
           ),
         );
 
@@ -289,13 +331,21 @@ void main() {
           startUpload: StartUploadUseCase(repository),
           startDownload: StartDownloadUseCase(repository),
           retryTransfer: RetryTransferUseCase(repository),
+          cancelTransfer: CancelTransferUseCase(repository),
           sendFiles: SendFiles(repository),
-          checkStorageAvailability: CheckStorageAvailability(repository),
-          evaluateUploadPolicy: EvaluateUploadPolicyUseCase(
-            _FakeNetworkInfo(isMobile: false),
+          validateTransferBatch: ValidateTransferBatchUseCase(
+            EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: false)),
           ),
-          checkTransferPermissions: CheckTransferPermissionsUseCase(
-            _FakePermissionService(storageGranted: false),
+          prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+            checkTransferPermissions: CheckTransferPermissionsUseCase(
+              _FakePermissionService(storageGranted: false),
+            ),
+            checkStorageAvailability: CheckStorageAvailability(repository),
+          ),
+          prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+            CheckTransferPermissionsUseCase(
+              _FakePermissionService(storageGranted: false),
+            ),
           ),
         );
 
@@ -330,13 +380,21 @@ void main() {
           startUpload: StartUploadUseCase(repository),
           startDownload: StartDownloadUseCase(repository),
           retryTransfer: RetryTransferUseCase(repository),
+          cancelTransfer: CancelTransferUseCase(repository),
           sendFiles: SendFiles(repository),
-          checkStorageAvailability: CheckStorageAvailability(repository),
-          evaluateUploadPolicy: EvaluateUploadPolicyUseCase(
-            _FakeNetworkInfo(isMobile: false),
+          validateTransferBatch: ValidateTransferBatchUseCase(
+            EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: false)),
           ),
-          checkTransferPermissions: CheckTransferPermissionsUseCase(
-            _FakePermissionService(notificationGranted: false),
+          prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+            checkTransferPermissions: CheckTransferPermissionsUseCase(
+              _FakePermissionService(notificationGranted: false),
+            ),
+            checkStorageAvailability: CheckStorageAvailability(repository),
+          ),
+          prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+            CheckTransferPermissionsUseCase(
+              _FakePermissionService(notificationGranted: false),
+            ),
           ),
         );
 
@@ -371,13 +429,19 @@ void main() {
         startUpload: StartUploadUseCase(repository),
         startDownload: StartDownloadUseCase(repository),
         retryTransfer: RetryTransferUseCase(repository),
+        cancelTransfer: CancelTransferUseCase(repository),
         sendFiles: SendFiles(repository),
-        checkStorageAvailability: CheckStorageAvailability(repository),
-        evaluateUploadPolicy: EvaluateUploadPolicyUseCase(
-          _FakeNetworkInfo(isMobile: false),
+        validateTransferBatch: ValidateTransferBatchUseCase(
+          EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: false)),
         ),
-        checkTransferPermissions: CheckTransferPermissionsUseCase(
-          _FakePermissionService(),
+        prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+          checkTransferPermissions: CheckTransferPermissionsUseCase(
+            _FakePermissionService(),
+          ),
+          checkStorageAvailability: CheckStorageAvailability(repository),
+        ),
+        prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+          CheckTransferPermissionsUseCase(_FakePermissionService()),
         ),
       );
 
@@ -452,6 +516,12 @@ class _FakeTransferRepository implements TransferRepository {
 
   @override
   Future<void> retryTransfer(String transferId) async {}
+
+  @override
+  Future<void> cancelTransfer(String transferId) async {}
+
+  @override
+  Future<void> resumeIncompleteTransfers({String? transferId}) async {}
 
   @override
   Future<void> rejectIncomingTransfer({required String transferId}) async {}

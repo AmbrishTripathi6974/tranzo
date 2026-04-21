@@ -94,7 +94,7 @@ final class TransferLifecycleSignal {
 }
 
 /// Realtime broadcast helper (no UI subscriptions here).
-final class RealtimeService {
+class RealtimeService {
   RealtimeService(this._client);
 
   final SupabaseClient _client;

@@ -6,7 +6,7 @@ import '../errors/exceptions.dart';
 /// Creates cloud-side transfer session rows.
 ///
 /// Expects a `transfer_sessions` table aligned with your RLS policies.
-final class TransferService {
+class TransferService {
   TransferService(this._client);
 
   final SupabaseClient _client;

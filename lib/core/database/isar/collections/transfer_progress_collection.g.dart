@@ -28,23 +28,50 @@ const TransferProgressCollectionSchema = CollectionSchema(
       name: r'direction',
       type: IsarType.long,
     ),
+    r'fileId': PropertySchema(id: 2, name: r'fileId', type: IsarType.string),
     r'fileName': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'fileName',
       type: IsarType.string,
     ),
+    r'lastErrorCode': PropertySchema(
+      id: 4,
+      name: r'lastErrorCode',
+      type: IsarType.string,
+    ),
+    r'nextRetryAt': PropertySchema(
+      id: 5,
+      name: r'nextRetryAt',
+      type: IsarType.dateTime,
+    ),
+    r'progressKey': PropertySchema(
+      id: 6,
+      name: r'progressKey',
+      type: IsarType.string,
+    ),
+    r'retryAttempt': PropertySchema(
+      id: 7,
+      name: r'retryAttempt',
+      type: IsarType.long,
+    ),
+    r'status': PropertySchema(id: 8, name: r'status', type: IsarType.string),
     r'totalBytes': PropertySchema(
-      id: 3,
+      id: 9,
       name: r'totalBytes',
       type: IsarType.long,
     ),
+    r'totalChunks': PropertySchema(
+      id: 10,
+      name: r'totalChunks',
+      type: IsarType.long,
+    ),
     r'transferId': PropertySchema(
-      id: 4,
+      id: 11,
       name: r'transferId',
       type: IsarType.string,
     ),
     r'updatedAt': PropertySchema(
-      id: 5,
+      id: 12,
       name: r'updatedAt',
       type: IsarType.dateTime,
     ),
@@ -56,14 +83,40 @@ const TransferProgressCollectionSchema = CollectionSchema(
   deserializeProp: _transferProgressCollectionDeserializeProp,
   idName: r'id',
   indexes: {
-    r'transferId': IndexSchema(
-      id: -3874495609261714017,
-      name: r'transferId',
+    r'progressKey': IndexSchema(
+      id: 8097696484264715587,
+      name: r'progressKey',
       unique: true,
       replace: true,
       properties: [
         IndexPropertySchema(
+          name: r'progressKey',
+          type: IndexType.hash,
+          caseSensitive: true,
+        ),
+      ],
+    ),
+    r'transferId': IndexSchema(
+      id: -3874495609261714017,
+      name: r'transferId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
           name: r'transferId',
+          type: IndexType.hash,
+          caseSensitive: true,
+        ),
+      ],
+    ),
+    r'fileId': IndexSchema(
+      id: -2092632783237962250,
+      name: r'fileId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'fileId',
           type: IndexType.hash,
           caseSensitive: true,
         ),
@@ -86,7 +139,16 @@ int _transferProgressCollectionEstimateSize(
 ) {
   var bytesCount = offsets.last;
   bytesCount += 3 + object.completedChunkIndexes.length * 8;
+  bytesCount += 3 + object.fileId.length * 3;
   bytesCount += 3 + object.fileName.length * 3;
+  {
+    final value = object.lastErrorCode;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  bytesCount += 3 + object.progressKey.length * 3;
+  bytesCount += 3 + object.status.length * 3;
   bytesCount += 3 + object.transferId.length * 3;
   return bytesCount;
 }
@@ -99,10 +161,17 @@ void _transferProgressCollectionSerialize(
 ) {
   writer.writeLongList(offsets[0], object.completedChunkIndexes);
   writer.writeLong(offsets[1], object.direction);
-  writer.writeString(offsets[2], object.fileName);
-  writer.writeLong(offsets[3], object.totalBytes);
-  writer.writeString(offsets[4], object.transferId);
-  writer.writeDateTime(offsets[5], object.updatedAt);
+  writer.writeString(offsets[2], object.fileId);
+  writer.writeString(offsets[3], object.fileName);
+  writer.writeString(offsets[4], object.lastErrorCode);
+  writer.writeDateTime(offsets[5], object.nextRetryAt);
+  writer.writeString(offsets[6], object.progressKey);
+  writer.writeLong(offsets[7], object.retryAttempt);
+  writer.writeString(offsets[8], object.status);
+  writer.writeLong(offsets[9], object.totalBytes);
+  writer.writeLong(offsets[10], object.totalChunks);
+  writer.writeString(offsets[11], object.transferId);
+  writer.writeDateTime(offsets[12], object.updatedAt);
 }
 
 TransferProgressCollection _transferProgressCollectionDeserialize(
@@ -114,11 +183,18 @@ TransferProgressCollection _transferProgressCollectionDeserialize(
   final object = TransferProgressCollection();
   object.completedChunkIndexes = reader.readLongList(offsets[0]) ?? [];
   object.direction = reader.readLong(offsets[1]);
-  object.fileName = reader.readString(offsets[2]);
+  object.fileId = reader.readString(offsets[2]);
+  object.fileName = reader.readString(offsets[3]);
   object.id = id;
-  object.totalBytes = reader.readLong(offsets[3]);
-  object.transferId = reader.readString(offsets[4]);
-  object.updatedAt = reader.readDateTimeOrNull(offsets[5]);
+  object.lastErrorCode = reader.readStringOrNull(offsets[4]);
+  object.nextRetryAt = reader.readDateTimeOrNull(offsets[5]);
+  object.progressKey = reader.readString(offsets[6]);
+  object.retryAttempt = reader.readLong(offsets[7]);
+  object.status = reader.readString(offsets[8]);
+  object.totalBytes = reader.readLong(offsets[9]);
+  object.totalChunks = reader.readLong(offsets[10]);
+  object.transferId = reader.readString(offsets[11]);
+  object.updatedAt = reader.readDateTimeOrNull(offsets[12]);
   return object;
 }
 
@@ -136,10 +212,24 @@ P _transferProgressCollectionDeserializeProp<P>(
     case 2:
       return (reader.readString(offset)) as P;
     case 3:
-      return (reader.readLong(offset)) as P;
-    case 4:
       return (reader.readString(offset)) as P;
+    case 4:
+      return (reader.readStringOrNull(offset)) as P;
     case 5:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 6:
+      return (reader.readString(offset)) as P;
+    case 7:
+      return (reader.readLong(offset)) as P;
+    case 8:
+      return (reader.readString(offset)) as P;
+    case 9:
+      return (reader.readLong(offset)) as P;
+    case 10:
+      return (reader.readLong(offset)) as P;
+    case 11:
+      return (reader.readString(offset)) as P;
+    case 12:
       return (reader.readDateTimeOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -166,68 +256,68 @@ void _transferProgressCollectionAttach(
 
 extension TransferProgressCollectionByIndex
     on IsarCollection<TransferProgressCollection> {
-  Future<TransferProgressCollection?> getByTransferId(String transferId) {
-    return getByIndex(r'transferId', [transferId]);
+  Future<TransferProgressCollection?> getByProgressKey(String progressKey) {
+    return getByIndex(r'progressKey', [progressKey]);
   }
 
-  TransferProgressCollection? getByTransferIdSync(String transferId) {
-    return getByIndexSync(r'transferId', [transferId]);
+  TransferProgressCollection? getByProgressKeySync(String progressKey) {
+    return getByIndexSync(r'progressKey', [progressKey]);
   }
 
-  Future<bool> deleteByTransferId(String transferId) {
-    return deleteByIndex(r'transferId', [transferId]);
+  Future<bool> deleteByProgressKey(String progressKey) {
+    return deleteByIndex(r'progressKey', [progressKey]);
   }
 
-  bool deleteByTransferIdSync(String transferId) {
-    return deleteByIndexSync(r'transferId', [transferId]);
+  bool deleteByProgressKeySync(String progressKey) {
+    return deleteByIndexSync(r'progressKey', [progressKey]);
   }
 
-  Future<List<TransferProgressCollection?>> getAllByTransferId(
-    List<String> transferIdValues,
+  Future<List<TransferProgressCollection?>> getAllByProgressKey(
+    List<String> progressKeyValues,
   ) {
-    final values = transferIdValues.map((e) => [e]).toList();
-    return getAllByIndex(r'transferId', values);
+    final values = progressKeyValues.map((e) => [e]).toList();
+    return getAllByIndex(r'progressKey', values);
   }
 
-  List<TransferProgressCollection?> getAllByTransferIdSync(
-    List<String> transferIdValues,
+  List<TransferProgressCollection?> getAllByProgressKeySync(
+    List<String> progressKeyValues,
   ) {
-    final values = transferIdValues.map((e) => [e]).toList();
-    return getAllByIndexSync(r'transferId', values);
+    final values = progressKeyValues.map((e) => [e]).toList();
+    return getAllByIndexSync(r'progressKey', values);
   }
 
-  Future<int> deleteAllByTransferId(List<String> transferIdValues) {
-    final values = transferIdValues.map((e) => [e]).toList();
-    return deleteAllByIndex(r'transferId', values);
+  Future<int> deleteAllByProgressKey(List<String> progressKeyValues) {
+    final values = progressKeyValues.map((e) => [e]).toList();
+    return deleteAllByIndex(r'progressKey', values);
   }
 
-  int deleteAllByTransferIdSync(List<String> transferIdValues) {
-    final values = transferIdValues.map((e) => [e]).toList();
-    return deleteAllByIndexSync(r'transferId', values);
+  int deleteAllByProgressKeySync(List<String> progressKeyValues) {
+    final values = progressKeyValues.map((e) => [e]).toList();
+    return deleteAllByIndexSync(r'progressKey', values);
   }
 
-  Future<Id> putByTransferId(TransferProgressCollection object) {
-    return putByIndex(r'transferId', object);
+  Future<Id> putByProgressKey(TransferProgressCollection object) {
+    return putByIndex(r'progressKey', object);
   }
 
-  Id putByTransferIdSync(
+  Id putByProgressKeySync(
     TransferProgressCollection object, {
     bool saveLinks = true,
   }) {
-    return putByIndexSync(r'transferId', object, saveLinks: saveLinks);
+    return putByIndexSync(r'progressKey', object, saveLinks: saveLinks);
   }
 
-  Future<List<Id>> putAllByTransferId(
+  Future<List<Id>> putAllByProgressKey(
     List<TransferProgressCollection> objects,
   ) {
-    return putAllByIndex(r'transferId', objects);
+    return putAllByIndex(r'progressKey', objects);
   }
 
-  List<Id> putAllByTransferIdSync(
+  List<Id> putAllByProgressKeySync(
     List<TransferProgressCollection> objects, {
     bool saveLinks = true,
   }) {
-    return putAllByIndexSync(r'transferId', objects, saveLinks: saveLinks);
+    return putAllByIndexSync(r'progressKey', objects, saveLinks: saveLinks);
   }
 }
 
@@ -349,6 +439,69 @@ extension TransferProgressCollectionQueryWhere
     TransferProgressCollection,
     QAfterWhereClause
   >
+  progressKeyEqualTo(String progressKey) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(
+          indexName: r'progressKey',
+          value: [progressKey],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterWhereClause
+  >
+  progressKeyNotEqualTo(String progressKey) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'progressKey',
+                lower: [],
+                upper: [progressKey],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'progressKey',
+                lower: [progressKey],
+                includeLower: false,
+                upper: [],
+              ),
+            );
+      } else {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'progressKey',
+                lower: [progressKey],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'progressKey',
+                lower: [],
+                upper: [progressKey],
+                includeUpper: false,
+              ),
+            );
+      }
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterWhereClause
+  >
   transferIdEqualTo(String transferId) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
@@ -397,6 +550,66 @@ extension TransferProgressCollectionQueryWhere
                 indexName: r'transferId',
                 lower: [],
                 upper: [transferId],
+                includeUpper: false,
+              ),
+            );
+      }
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterWhereClause
+  >
+  fileIdEqualTo(String fileId) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'fileId', value: [fileId]),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterWhereClause
+  >
+  fileIdNotEqualTo(String fileId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'fileId',
+                lower: [],
+                upper: [fileId],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'fileId',
+                lower: [fileId],
+                includeLower: false,
+                upper: [],
+              ),
+            );
+      } else {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'fileId',
+                lower: [fileId],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'fileId',
+                lower: [],
+                upper: [fileId],
                 includeUpper: false,
               ),
             );
@@ -648,6 +861,187 @@ extension TransferProgressCollectionQueryFilter
           upper: upper,
           includeUpper: includeUpper,
         ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  fileIdEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'fileId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  fileIdGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'fileId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  fileIdLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'fileId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  fileIdBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'fileId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  fileIdStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'fileId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  fileIdEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'fileId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  fileIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'fileId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  fileIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'fileId',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  fileIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'fileId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  fileIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'fileId', value: ''),
       );
     });
   }
@@ -909,6 +1303,743 @@ extension TransferProgressCollectionQueryFilter
     TransferProgressCollection,
     QAfterFilterCondition
   >
+  lastErrorCodeIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'lastErrorCode'),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  lastErrorCodeIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'lastErrorCode'),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  lastErrorCodeEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'lastErrorCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  lastErrorCodeGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'lastErrorCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  lastErrorCodeLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'lastErrorCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  lastErrorCodeBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'lastErrorCode',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  lastErrorCodeStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'lastErrorCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  lastErrorCodeEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'lastErrorCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  lastErrorCodeContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'lastErrorCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  lastErrorCodeMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'lastErrorCode',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  lastErrorCodeIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'lastErrorCode', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  lastErrorCodeIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'lastErrorCode', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  nextRetryAtIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'nextRetryAt'),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  nextRetryAtIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'nextRetryAt'),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  nextRetryAtEqualTo(DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'nextRetryAt', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  nextRetryAtGreaterThan(DateTime? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'nextRetryAt',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  nextRetryAtLessThan(DateTime? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'nextRetryAt',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  nextRetryAtBetween(
+    DateTime? lower,
+    DateTime? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'nextRetryAt',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  progressKeyEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'progressKey',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  progressKeyGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'progressKey',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  progressKeyLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'progressKey',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  progressKeyBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'progressKey',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  progressKeyStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'progressKey',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  progressKeyEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'progressKey',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  progressKeyContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'progressKey',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  progressKeyMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'progressKey',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  progressKeyIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'progressKey', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  progressKeyIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'progressKey', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  retryAttemptEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'retryAttempt', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  retryAttemptGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'retryAttempt',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  retryAttemptLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'retryAttempt',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  retryAttemptBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'retryAttempt',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  statusEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'status',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  statusGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'status',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  statusLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'status',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  statusBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'status',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  statusStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'status',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  statusEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'status',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  statusContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'status',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  statusMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'status',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  statusIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'status', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  statusIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'status', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
   totalBytesEqualTo(int value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -966,6 +2097,77 @@ extension TransferProgressCollectionQueryFilter
       return query.addFilterCondition(
         FilterCondition.between(
           property: r'totalBytes',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  totalChunksEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'totalChunks', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  totalChunksGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'totalChunks',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  totalChunksLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'totalChunks',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterFilterCondition
+  >
+  totalChunksBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'totalChunks',
           lower: lower,
           includeLower: includeLower,
           upper: upper,
@@ -1304,6 +2506,28 @@ extension TransferProgressCollectionQuerySortBy
     TransferProgressCollection,
     QAfterSortBy
   >
+  sortByFileId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  sortByFileIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
   sortByFileName() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'fileName', Sort.asc);
@@ -1326,6 +2550,116 @@ extension TransferProgressCollectionQuerySortBy
     TransferProgressCollection,
     QAfterSortBy
   >
+  sortByLastErrorCode() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastErrorCode', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  sortByLastErrorCodeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastErrorCode', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  sortByNextRetryAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nextRetryAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  sortByNextRetryAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nextRetryAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  sortByProgressKey() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'progressKey', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  sortByProgressKeyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'progressKey', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  sortByRetryAttempt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'retryAttempt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  sortByRetryAttemptDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'retryAttempt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  sortByStatus() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'status', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  sortByStatusDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'status', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
   sortByTotalBytes() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'totalBytes', Sort.asc);
@@ -1340,6 +2674,28 @@ extension TransferProgressCollectionQuerySortBy
   sortByTotalBytesDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'totalBytes', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  sortByTotalChunks() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'totalChunks', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  sortByTotalChunksDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'totalChunks', Sort.desc);
     });
   }
 
@@ -1422,6 +2778,28 @@ extension TransferProgressCollectionQuerySortThenBy
     TransferProgressCollection,
     QAfterSortBy
   >
+  thenByFileId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  thenByFileIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
   thenByFileName() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'fileName', Sort.asc);
@@ -1466,6 +2844,116 @@ extension TransferProgressCollectionQuerySortThenBy
     TransferProgressCollection,
     QAfterSortBy
   >
+  thenByLastErrorCode() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastErrorCode', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  thenByLastErrorCodeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastErrorCode', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  thenByNextRetryAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nextRetryAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  thenByNextRetryAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nextRetryAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  thenByProgressKey() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'progressKey', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  thenByProgressKeyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'progressKey', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  thenByRetryAttempt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'retryAttempt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  thenByRetryAttemptDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'retryAttempt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  thenByStatus() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'status', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  thenByStatusDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'status', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
   thenByTotalBytes() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'totalBytes', Sort.asc);
@@ -1480,6 +2968,28 @@ extension TransferProgressCollectionQuerySortThenBy
   thenByTotalBytesDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'totalBytes', Sort.desc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  thenByTotalChunks() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'totalChunks', Sort.asc);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QAfterSortBy
+  >
+  thenByTotalChunksDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'totalChunks', Sort.desc);
     });
   }
 
@@ -1562,6 +3072,17 @@ extension TransferProgressCollectionQueryWhereDistinct
     TransferProgressCollection,
     QDistinct
   >
+  distinctByFileId({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'fileId', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QDistinct
+  >
   distinctByFileName({bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'fileName', caseSensitive: caseSensitive);
@@ -1573,9 +3094,78 @@ extension TransferProgressCollectionQueryWhereDistinct
     TransferProgressCollection,
     QDistinct
   >
+  distinctByLastErrorCode({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'lastErrorCode',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QDistinct
+  >
+  distinctByNextRetryAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'nextRetryAt');
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QDistinct
+  >
+  distinctByProgressKey({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'progressKey', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QDistinct
+  >
+  distinctByRetryAttempt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'retryAttempt');
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QDistinct
+  >
+  distinctByStatus({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'status', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QDistinct
+  >
   distinctByTotalBytes() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'totalBytes');
+    });
+  }
+
+  QueryBuilder<
+    TransferProgressCollection,
+    TransferProgressCollection,
+    QDistinct
+  >
+  distinctByTotalChunks() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'totalChunks');
     });
   }
 
@@ -1630,9 +3220,51 @@ extension TransferProgressCollectionQueryProperty
   }
 
   QueryBuilder<TransferProgressCollection, String, QQueryOperations>
+  fileIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'fileId');
+    });
+  }
+
+  QueryBuilder<TransferProgressCollection, String, QQueryOperations>
   fileNameProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'fileName');
+    });
+  }
+
+  QueryBuilder<TransferProgressCollection, String?, QQueryOperations>
+  lastErrorCodeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'lastErrorCode');
+    });
+  }
+
+  QueryBuilder<TransferProgressCollection, DateTime?, QQueryOperations>
+  nextRetryAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'nextRetryAt');
+    });
+  }
+
+  QueryBuilder<TransferProgressCollection, String, QQueryOperations>
+  progressKeyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'progressKey');
+    });
+  }
+
+  QueryBuilder<TransferProgressCollection, int, QQueryOperations>
+  retryAttemptProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'retryAttempt');
+    });
+  }
+
+  QueryBuilder<TransferProgressCollection, String, QQueryOperations>
+  statusProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'status');
     });
   }
 
@@ -1640,6 +3272,13 @@ extension TransferProgressCollectionQueryProperty
   totalBytesProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'totalBytes');
+    });
+  }
+
+  QueryBuilder<TransferProgressCollection, int, QQueryOperations>
+  totalChunksProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'totalChunks');
     });
   }
 

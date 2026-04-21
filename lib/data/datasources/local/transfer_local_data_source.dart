@@ -32,9 +32,13 @@ abstract interface class TransferLocalDataSource {
     FileStatus status,
   );
   Future<bool> fileExistsByFileId(String fileId);
-  Future<TransferResumeState?> getTransferProgress(String transferId);
+  Future<TransferResumeState?> getTransferProgress(
+    String transferId, {
+    String? fileId,
+  });
   Future<void> upsertTransferProgress(TransferResumeState state);
-  Future<void> clearTransferProgress(String transferId);
+  Future<void> clearTransferProgress(String transferId, {String? fileId});
+  Future<List<TransferResumeState>> getIncompleteTransferProgress();
 }
 
 class TransferLocalDataSourceImpl implements TransferLocalDataSource {
@@ -162,19 +166,36 @@ class TransferLocalDataSourceImpl implements TransferLocalDataSource {
   }
 
   @override
-  Future<TransferResumeState?> getTransferProgress(String transferId) async {
-    final TransferProgressCollection? row = await _isar
-        .transferProgressCollections
-        .getByTransferId(transferId);
+  Future<TransferResumeState?> getTransferProgress(
+    String transferId, {
+    String? fileId,
+  }) async {
+    final String? normalizedFileId = fileId?.trim().isEmpty == true
+        ? null
+        : fileId?.trim();
+    final TransferProgressCollection? row = normalizedFileId == null
+        ? await _isar.transferProgressCollections
+              .filter()
+              .transferIdEqualTo(transferId)
+              .findFirst()
+        : await _isar.transferProgressCollections.getByProgressKey(
+            '$transferId:$normalizedFileId',
+          );
     if (row == null) {
       return null;
     }
     return TransferResumeState(
       transferId: row.transferId,
+      fileId: row.fileId,
       fileName: row.fileName,
       totalBytes: row.totalBytes,
+      totalChunks: row.totalChunks,
       direction: TransferSessionDirection.values[row.direction],
+      status: row.status,
       completedChunkIndexes: row.completedChunkIndexes.toSet(),
+      retryAttempt: row.retryAttempt,
+      nextRetryAt: row.nextRetryAt,
+      lastErrorCode: row.lastErrorCode,
       updatedAt: row.updatedAt,
     );
   }
@@ -186,20 +207,78 @@ class TransferLocalDataSourceImpl implements TransferLocalDataSource {
     )..sort();
     await _isar.writeTxn(() async {
       final TransferProgressCollection row = TransferProgressCollection()
+        ..progressKey = '${state.transferId}:${state.fileId}'
         ..transferId = state.transferId
+        ..fileId = state.fileId
         ..fileName = state.fileName
         ..totalBytes = state.totalBytes
+        ..totalChunks = state.totalChunks
+        ..status = state.status
         ..direction = state.direction.index
         ..completedChunkIndexes = completed
+        ..retryAttempt = state.retryAttempt
+        ..nextRetryAt = state.nextRetryAt
+        ..lastErrorCode = state.lastErrorCode
         ..updatedAt = DateTime.now();
-      await _isar.transferProgressCollections.putByTransferId(row);
+      await _isar.transferProgressCollections.putByProgressKey(row);
     });
   }
 
   @override
-  Future<void> clearTransferProgress(String transferId) async {
+  Future<void> clearTransferProgress(
+    String transferId, {
+    String? fileId,
+  }) async {
+    final String? normalizedFileId = fileId?.trim().isEmpty == true
+        ? null
+        : fileId?.trim();
     await _isar.writeTxn(() async {
-      await _isar.transferProgressCollections.deleteByTransferId(transferId);
+      if (normalizedFileId != null) {
+        await _isar.transferProgressCollections.deleteByProgressKey(
+          '$transferId:$normalizedFileId',
+        );
+        return;
+      }
+      final List<TransferProgressCollection> rows = await _isar
+          .transferProgressCollections
+          .filter()
+          .transferIdEqualTo(transferId)
+          .findAll();
+      await _isar.transferProgressCollections.deleteAll(
+        rows.map((TransferProgressCollection row) => row.id).toList(),
+      );
     });
+  }
+
+  @override
+  Future<List<TransferResumeState>> getIncompleteTransferProgress() async {
+    final List<TransferProgressCollection> rows = await _isar
+        .transferProgressCollections
+        .where()
+        .findAll();
+    return rows
+        .where(
+          (TransferProgressCollection row) =>
+              row.status != TransferStatus.completed.name &&
+              row.status != TransferStatus.cancelled.name &&
+              row.completedChunkIndexes.length < row.totalChunks,
+        )
+        .map(
+          (TransferProgressCollection row) => TransferResumeState(
+            transferId: row.transferId,
+            fileId: row.fileId,
+            fileName: row.fileName,
+            totalBytes: row.totalBytes,
+            totalChunks: row.totalChunks,
+            direction: TransferSessionDirection.values[row.direction],
+            status: row.status,
+            completedChunkIndexes: row.completedChunkIndexes.toSet(),
+            retryAttempt: row.retryAttempt,
+            nextRetryAt: row.nextRetryAt,
+            lastErrorCode: row.lastErrorCode,
+            updatedAt: row.updatedAt,
+          ),
+        )
+        .toList(growable: false);
   }
 }

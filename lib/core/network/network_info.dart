@@ -37,7 +37,9 @@ class NetworkInfoImpl implements NetworkInfo {
 
   @override
   Stream<NetworkConnectionType> get onConnectionChanged {
-    return _connectivity.onConnectivityChanged.map((List<ConnectivityResult> r) {
+    return _connectivity.onConnectivityChanged.map((
+      List<ConnectivityResult> r,
+    ) {
       if (r.isEmpty || r.contains(ConnectivityResult.none)) {
         return NetworkConnectionType.none;
       }

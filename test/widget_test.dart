@@ -20,7 +20,11 @@ import 'package:tranzo/domain/usecases/start_download_usecase.dart';
 import 'package:tranzo/domain/usecases/start_upload_usecase.dart';
 import 'package:tranzo/domain/usecases/check_transfer_permissions_usecase.dart';
 import 'package:tranzo/domain/usecases/check_storage_availability_usecase.dart';
+import 'package:tranzo/domain/usecases/cancel_transfer_usecase.dart';
 import 'package:tranzo/domain/usecases/evaluate_upload_policy_usecase.dart';
+import 'package:tranzo/domain/usecases/prepare_batch_upload_ui_usecase.dart';
+import 'package:tranzo/domain/usecases/prepare_incoming_transfer_usecase.dart';
+import 'package:tranzo/domain/usecases/validate_transfer_batch_usecase.dart';
 import 'package:tranzo/presentation/bloc/transfer/transfer_bloc.dart';
 import 'package:tranzo/presentation/pages/transfer_home_page.dart';
 
@@ -31,11 +35,19 @@ void main() {
       startUpload: StartUploadUseCase(repository),
       startDownload: StartDownloadUseCase(repository),
       retryTransfer: RetryTransferUseCase(repository),
+      cancelTransfer: CancelTransferUseCase(repository),
       sendFiles: SendFiles(repository),
-      checkStorageAvailability: CheckStorageAvailability(repository),
-      evaluateUploadPolicy: EvaluateUploadPolicyUseCase(_FakeNetworkInfo()),
-      checkTransferPermissions: CheckTransferPermissionsUseCase(
-        _FakePermissionService(),
+      validateTransferBatch: ValidateTransferBatchUseCase(
+        EvaluateUploadPolicyUseCase(_FakeNetworkInfo()),
+      ),
+      prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+        checkTransferPermissions: CheckTransferPermissionsUseCase(
+          _FakePermissionService(),
+        ),
+        checkStorageAvailability: CheckStorageAvailability(repository),
+      ),
+      prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+        CheckTransferPermissionsUseCase(_FakePermissionService()),
       ),
     );
 
@@ -88,6 +100,12 @@ class _FakeTransferRepository implements TransferRepository {
 
   @override
   Future<void> retryTransfer(String transferId) async {}
+
+  @override
+  Future<void> cancelTransfer(String transferId) async {}
+
+  @override
+  Future<void> resumeIncompleteTransfers({String? transferId}) async {}
 
   @override
   Future<void> rejectIncomingTransfer({required String transferId}) async {}

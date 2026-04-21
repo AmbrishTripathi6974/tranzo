@@ -1,7 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'dart:async';
 
-import '../../../core/constants/app_constants.dart';
 import '../../../core/errors/exceptions.dart';
 import '../../../domain/entities/incoming_transfer_offer.dart';
 import '../../../domain/entities/selected_transfer_file.dart';
@@ -10,9 +9,10 @@ import '../../../domain/usecases/retry_transfer_usecase.dart';
 import '../../../domain/usecases/send_files_usecase.dart';
 import '../../../domain/usecases/start_download_usecase.dart';
 import '../../../domain/usecases/start_upload_usecase.dart';
-import '../../../domain/usecases/check_transfer_permissions_usecase.dart';
-import '../../../domain/usecases/evaluate_upload_policy_usecase.dart';
-import '../../../domain/usecases/check_storage_availability_usecase.dart';
+import '../../../domain/usecases/cancel_transfer_usecase.dart';
+import '../../../domain/usecases/prepare_batch_upload_ui_usecase.dart';
+import '../../../domain/usecases/prepare_incoming_transfer_usecase.dart';
+import '../../../domain/usecases/validate_transfer_batch_usecase.dart';
 import '../../../domain/entities/transfer_batch_progress.dart';
 import 'transfer_event.dart';
 import 'transfer_state.dart';
@@ -22,21 +22,24 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     required StartUploadUseCase startUpload,
     required StartDownloadUseCase startDownload,
     required RetryTransferUseCase retryTransfer,
+    required CancelTransferUseCase cancelTransfer,
     required SendFiles sendFiles,
-    required CheckStorageAvailability checkStorageAvailability,
-    required EvaluateUploadPolicyUseCase evaluateUploadPolicy,
-    required CheckTransferPermissionsUseCase checkTransferPermissions,
+    required PrepareBatchUploadUiUseCase prepareBatchUploadUi,
+    required ValidateTransferBatchUseCase validateTransferBatch,
+    required PrepareIncomingTransferUseCase prepareIncomingTransfer,
   }) : _startUpload = startUpload,
        _startDownload = startDownload,
        _retryTransfer = retryTransfer,
+       _cancelTransfer = cancelTransfer,
        _sendFiles = sendFiles,
-       _checkStorageAvailability = checkStorageAvailability,
-       _evaluateUploadPolicy = evaluateUploadPolicy,
-       _checkTransferPermissions = checkTransferPermissions,
+       _prepareBatchUploadUi = prepareBatchUploadUi,
+       _validateTransferBatch = validateTransferBatch,
+       _prepareIncomingTransfer = prepareIncomingTransfer,
        super(const TransferState()) {
     on<TransferUploadRequested>(_onUploadRequested);
     on<TransferDownloadRequested>(_onDownloadRequested);
     on<TransferRetryRequested>(_onRetryRequested);
+    on<TransferCancelRequested>(_onCancelRequested);
     on<TransferBatchUploadRequested>(_onBatchUploadRequested);
     on<IncomingTransferListeningRequested>(_onIncomingListeningRequested);
     on<IncomingTransferReceived>(_onIncomingTransferReceived);
@@ -52,10 +55,11 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
   final StartUploadUseCase _startUpload;
   final StartDownloadUseCase _startDownload;
   final RetryTransferUseCase _retryTransfer;
+  final CancelTransferUseCase _cancelTransfer;
   final SendFiles _sendFiles;
-  final CheckStorageAvailability _checkStorageAvailability;
-  final EvaluateUploadPolicyUseCase _evaluateUploadPolicy;
-  final CheckTransferPermissionsUseCase _checkTransferPermissions;
+  final PrepareBatchUploadUiUseCase _prepareBatchUploadUi;
+  final ValidateTransferBatchUseCase _validateTransferBatch;
+  final PrepareIncomingTransferUseCase _prepareIncomingTransfer;
   StreamSubscription<IncomingTransferOffer>? _incomingSubscription;
   StreamSubscription<TransferLifecycleSignalEntity>? _lifecycleSubscription;
 
@@ -89,6 +93,17 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       emit: emit,
       transferId: event.transferId,
       action: () => _retryTransfer(event.transferId),
+    );
+  }
+
+  Future<void> _onCancelRequested(
+    TransferCancelRequested event,
+    Emitter<TransferState> emit,
+  ) async {
+    await _runTransferAction(
+      emit: emit,
+      transferId: event.transferId,
+      action: () => _cancelTransfer(event.transferId),
     );
   }
 
@@ -128,42 +143,37 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     TransferBatchUploadRequested event,
     Emitter<TransferState> emit,
   ) async {
-    final bool oversized = event.files.any(
-      (file) => file.sizeBytes > AppConstants.maxTransferFileSizeBytes,
-    );
-    if (oversized) {
+    try {
+      final TransferBatchValidationDecision validation =
+          await _validateTransferBatch(event.files);
+      if (validation.requiresMobileDataConfirmation) {
+        emit(
+          state.copyWith(
+            pendingUploadConfirmation: PendingUploadConfirmation(
+              senderId: event.senderId,
+              recipientCode: event.recipientCode,
+              files: event.files,
+              totalBytes: validation.totalBytes,
+            ),
+            clearErrorMessage: true,
+          ),
+        );
+        return;
+      }
+      await _startBatchUpload(
+        emit,
+        senderId: event.senderId,
+        recipientCode: event.recipientCode,
+        files: event.files,
+      );
+    } catch (error) {
       emit(
         state.copyWith(
           status: TransferStatus.error,
-          errorMessage: 'File exceeds 1GB max size.',
+          errorMessage: _toDisplayError(error),
         ),
       );
-      return;
     }
-
-    final UploadPolicyDecision uploadPolicy = await _evaluateUploadPolicy(
-      event.files,
-    );
-    if (uploadPolicy.requiresMobileDataConfirmation) {
-      emit(
-        state.copyWith(
-          pendingUploadConfirmation: PendingUploadConfirmation(
-            senderId: event.senderId,
-            recipientCode: event.recipientCode,
-            files: event.files,
-            totalBytes: uploadPolicy.totalBytes,
-          ),
-          clearErrorMessage: true,
-        ),
-      );
-      return;
-    }
-    await _startBatchUpload(
-      emit,
-      senderId: event.senderId,
-      recipientCode: event.recipientCode,
-      files: event.files,
-    );
   }
 
   Future<void> _onBatchUploadConfirmed(
@@ -213,13 +223,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     required String recipientCode,
     required List<SelectedTransferFile> files,
   }) async {
-    final TransferPermissionDecision permissionDecision =
-        await _checkTransferPermissions();
-    String? warningMessage;
-    if (permissionDecision.notificationDenied) {
-      warningMessage =
-          'Notification permission denied. Transfer will continue with in-app progress.';
-    }
+    final BatchUploadUiDecision uiDecision = await _prepareBatchUploadUi();
 
     emit(
       state.copyWith(
@@ -227,8 +231,8 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
         progress: 0,
         clearErrorMessage: true,
         clearBatchProgress: true,
-        uiWarningMessage: warningMessage,
-        showInAppProgress: permissionDecision.notificationDenied,
+        uiWarningMessage: uiDecision.warningMessage,
+        showInAppProgress: uiDecision.showInAppProgress,
       ),
     );
 
@@ -343,18 +347,11 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       state.copyWith(status: TransferStatus.loading, clearErrorMessage: true),
     );
     try {
-      final TransferPermissionDecision permissionDecision =
-          await _checkTransferPermissions();
-      final bool persistPermanently = permissionDecision.allowPersistentStorage;
-      final bool hasStorage = await _checkStorageAvailability(
-        event.transfer.fileSize,
-      );
-      if (!hasStorage) {
-        throw Exception('Not enough storage space to receive this file.');
-      }
+      final PreparedIncomingTransferDecision decision =
+          await _prepareIncomingTransfer(event.transfer);
       await _sendFiles.acceptIncoming(
         transfer: event.transfer,
-        persistPermanently: persistPermanently,
+        persistPermanently: decision.persistPermanently,
       );
       emit(
         state.copyWith(
@@ -362,12 +359,8 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
           incomingTransfers: state.incomingTransfers
               .where((item) => item.transferId != event.transfer.transferId)
               .toList(growable: false),
-          uiWarningMessage: permissionDecision.storageDenied
-              ? 'Storage permission denied. File is available temporarily only.'
-              : (permissionDecision.notificationDenied
-                    ? 'Notification permission denied. Transfer progress is shown in-app.'
-                    : null),
-          showInAppProgress: permissionDecision.notificationDenied,
+          uiWarningMessage: decision.uiWarningMessage,
+          showInAppProgress: decision.showInAppProgress,
         ),
       );
     } catch (error) {

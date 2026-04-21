@@ -1,11 +1,25 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:workmanager/workmanager.dart';
 
+import '../../di/injection_container.dart';
+import '../../domain/usecases/resume_incomplete_transfers_usecase.dart';
+import 'supabase_client.dart';
+
 const String kTransferRetryTaskName = 'tranzo_transfer_retry';
 const String kTransferRetryTag = 'tranzo_transfer_retry_tag';
+
+typedef TransferRetryExecutor =
+    Future<void> Function(String transferId, bool userInitiated);
+
+TransferRetryExecutor? _retryExecutor;
+
+void registerTransferRetryExecutor(TransferRetryExecutor executor) {
+  _retryExecutor = executor;
+}
 
 @pragma('vm:entry-point')
 void transferRetryCallbackDispatcher() {
@@ -13,6 +27,23 @@ void transferRetryCallbackDispatcher() {
     String task,
     Map<String, dynamic>? inputData,
   ) async {
+    if (task != kTransferRetryTaskName) {
+      return true;
+    }
+    final String transferId = inputData?['transferId'] as String? ?? '';
+    final bool userInitiated = inputData?['userInitiated'] as bool? ?? false;
+    if (transferId.isEmpty) {
+      return true;
+    }
+    if (_retryExecutor != null) {
+      await _retryExecutor!(transferId, userInitiated);
+      return true;
+    }
+    WidgetsFlutterBinding.ensureInitialized();
+    await TranzoSupabase.initializeFromEnvironment();
+    await configureDependencies();
+    await registerIsarDatabase();
+    await sl<ResumeIncompleteTransfersUseCase>()(transferId: transferId);
     return true;
   });
 }
@@ -64,6 +95,8 @@ abstract interface class BackgroundTransferRuntimeService {
     required bool userInitiated,
     Duration initialDelay = Duration.zero,
   });
+
+  Future<void> cancelRetry({required String transferId});
 }
 
 class NoopBackgroundTransferRuntimeService
@@ -79,6 +112,9 @@ class NoopBackgroundTransferRuntimeService
     required bool userInitiated,
     Duration initialDelay = Duration.zero,
   }) async {}
+
+  @override
+  Future<void> cancelRetry({required String transferId}) async {}
 
   @override
   Future<void> startActiveTransfer({
@@ -222,6 +258,14 @@ class AndroidBackgroundTransferRuntimeService
         'userInitiated': userInitiated,
       },
     );
+  }
+
+  @override
+  Future<void> cancelRetry({required String transferId}) async {
+    if (kIsWeb || !Platform.isAndroid) {
+      return;
+    }
+    await Workmanager().cancelByUniqueName('transfer_retry_$transferId');
   }
 
   String _sanitizeFileName(String fileName) {

@@ -26,10 +26,15 @@ import '../domain/usecases/get_transfer_history_usecase.dart';
 import '../domain/usecases/check_transfer_permissions_usecase.dart';
 import '../domain/usecases/check_storage_availability_usecase.dart';
 import '../domain/usecases/evaluate_upload_policy_usecase.dart';
+import '../domain/usecases/cancel_transfer_usecase.dart';
+import '../domain/usecases/prepare_batch_upload_ui_usecase.dart';
+import '../domain/usecases/prepare_incoming_transfer_usecase.dart';
+import '../domain/usecases/resume_incomplete_transfers_usecase.dart';
 import '../domain/usecases/retry_transfer_usecase.dart';
 import '../domain/usecases/send_files_usecase.dart';
 import '../domain/usecases/start_download_usecase.dart';
 import '../domain/usecases/start_upload_usecase.dart';
+import '../domain/usecases/validate_transfer_batch_usecase.dart';
 import '../presentation/bloc/auth/auth_bloc.dart';
 import '../presentation/bloc/history/history_bloc.dart';
 import '../presentation/bloc/profile/profile_bloc.dart';
@@ -150,6 +155,18 @@ Future<void> configureDependencies() async {
   sl.registerLazySingleton<CheckTransferPermissionsUseCase>(
     () => CheckTransferPermissionsUseCase(sl<PermissionService>()),
   );
+  sl.registerLazySingleton<ValidateTransferBatchUseCase>(
+    () => ValidateTransferBatchUseCase(sl<EvaluateUploadPolicyUseCase>()),
+  );
+  sl.registerLazySingleton<PrepareIncomingTransferUseCase>(
+    () => PrepareIncomingTransferUseCase(
+      checkTransferPermissions: sl<CheckTransferPermissionsUseCase>(),
+      checkStorageAvailability: sl<CheckStorageAvailability>(),
+    ),
+  );
+  sl.registerLazySingleton<PrepareBatchUploadUiUseCase>(
+    () => PrepareBatchUploadUiUseCase(sl<CheckTransferPermissionsUseCase>()),
+  );
   sl.registerLazySingleton<StartUploadUseCase>(
     () => StartUploadUseCase(sl<TransferRepository>()),
   );
@@ -158,6 +175,12 @@ Future<void> configureDependencies() async {
   );
   sl.registerLazySingleton<RetryTransferUseCase>(
     () => RetryTransferUseCase(sl<TransferRepository>()),
+  );
+  sl.registerLazySingleton<CancelTransferUseCase>(
+    () => CancelTransferUseCase(sl<TransferRepository>()),
+  );
+  sl.registerLazySingleton<ResumeIncompleteTransfersUseCase>(
+    () => ResumeIncompleteTransfersUseCase(sl<TransferRepository>()),
   );
   sl.registerLazySingleton<SendFiles>(
     () => SendFiles(sl<TransferRepository>()),
@@ -184,10 +207,11 @@ Future<void> configureDependencies() async {
       startUpload: sl<StartUploadUseCase>(),
       startDownload: sl<StartDownloadUseCase>(),
       retryTransfer: sl<RetryTransferUseCase>(),
+      cancelTransfer: sl<CancelTransferUseCase>(),
       sendFiles: sl<SendFiles>(),
-      checkStorageAvailability: sl<CheckStorageAvailability>(),
-      evaluateUploadPolicy: sl<EvaluateUploadPolicyUseCase>(),
-      checkTransferPermissions: sl<CheckTransferPermissionsUseCase>(),
+      prepareBatchUploadUi: sl<PrepareBatchUploadUiUseCase>(),
+      validateTransferBatch: sl<ValidateTransferBatchUseCase>(),
+      prepareIncomingTransfer: sl<PrepareIncomingTransferUseCase>(),
     ),
   );
 }

@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Isar VM test binaries (downloaded by tool/ensure_isar_test_binary.dart or tests)
+test/libisar.dll
+test/libisar.so
+test/libisar.dylib

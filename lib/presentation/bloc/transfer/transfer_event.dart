@@ -39,6 +39,15 @@ class TransferRetryRequested extends TransferEvent {
   List<Object?> get props => <Object?>[transferId];
 }
 
+class TransferCancelRequested extends TransferEvent {
+  const TransferCancelRequested(this.transferId);
+
+  final String transferId;
+
+  @override
+  List<Object?> get props => <Object?>[transferId];
+}
+
 class TransferBatchUploadRequested extends TransferEvent {
   const TransferBatchUploadRequested({
     required this.senderId,

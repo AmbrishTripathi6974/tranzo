@@ -111,6 +111,12 @@ class _FakeTransferRepository implements TransferRepository {
   Future<void> retryTransfer(String transferId) async {}
 
   @override
+  Future<void> cancelTransfer(String transferId) async {}
+
+  @override
+  Future<void> resumeIncompleteTransfers({String? transferId}) async {}
+
+  @override
   Future<TransferEntity> sendFiles({
     required UserEntity sender,
     required UserEntity receiver,

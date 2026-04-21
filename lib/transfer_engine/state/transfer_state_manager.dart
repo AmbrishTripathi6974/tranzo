@@ -10,20 +10,32 @@ enum TransferSessionDirection { upload, download }
 final class TransferResumeState extends Equatable {
   const TransferResumeState({
     required this.transferId,
+    required this.fileId,
     required this.fileName,
     required this.totalBytes,
+    required this.totalChunks,
     required this.direction,
+    required this.status,
     this.completedChunkIndexes = const <int>{},
+    this.retryAttempt = 0,
+    this.nextRetryAt,
+    this.lastErrorCode,
     this.updatedAt,
   });
 
   final String transferId;
+  final String fileId;
   final String fileName;
   final int totalBytes;
+  final int totalChunks;
   final TransferSessionDirection direction;
+  final String status;
 
   /// Zero-based chunk indices that finished successfully (transport layer sets).
   final Set<int> completedChunkIndexes;
+  final int retryAttempt;
+  final DateTime? nextRetryAt;
+  final String? lastErrorCode;
   final DateTime? updatedAt;
 
   factory TransferResumeState.fromTask(
@@ -32,9 +44,14 @@ final class TransferResumeState extends Equatable {
   }) {
     return TransferResumeState(
       transferId: task.id,
+      fileId: task.id,
       fileName: task.fileName,
       totalBytes: task.totalBytes,
+      totalChunks: const ChunkManager()
+          .split(totalBytes: task.totalBytes)
+          .length,
       direction: direction,
+      status: 'pending',
     );
   }
 
@@ -43,12 +60,20 @@ final class TransferResumeState extends Equatable {
         json['completedChunkIndexes'] as List<dynamic>? ?? const <dynamic>[];
     return TransferResumeState(
       transferId: json['transferId'] as String,
+      fileId: json['fileId'] as String? ?? json['transferId'] as String,
       fileName: json['fileName'] as String,
       totalBytes: json['totalBytes'] as int,
+      totalChunks: json['totalChunks'] as int? ?? 0,
       direction: TransferSessionDirection.values.firstWhere(
         (TransferSessionDirection e) => e.name == json['direction'] as String,
       ),
+      status: json['status'] as String? ?? 'pending',
       completedChunkIndexes: Set<int>.from(raw.cast<int>()),
+      retryAttempt: json['retryAttempt'] as int? ?? 0,
+      nextRetryAt: json['nextRetryAt'] == null
+          ? null
+          : DateTime.parse(json['nextRetryAt'] as String),
+      lastErrorCode: json['lastErrorCode'] as String?,
       updatedAt: json['updatedAt'] == null
           ? null
           : DateTime.parse(json['updatedAt'] as String),
@@ -59,25 +84,41 @@ final class TransferResumeState extends Equatable {
     final List<int> sorted = completedChunkIndexes.toList()..sort();
     return <String, dynamic>{
       'transferId': transferId,
+      'fileId': fileId,
       'fileName': fileName,
       'totalBytes': totalBytes,
+      'totalChunks': totalChunks,
       'direction': direction.name,
+      'status': status,
       'completedChunkIndexes': sorted,
+      'retryAttempt': retryAttempt,
+      'nextRetryAt': nextRetryAt?.toIso8601String(),
+      'lastErrorCode': lastErrorCode,
       'updatedAt': updatedAt?.toIso8601String(),
     };
   }
 
   TransferResumeState copyWith({
+    String? status,
     Set<int>? completedChunkIndexes,
+    int? retryAttempt,
+    DateTime? nextRetryAt,
+    String? lastErrorCode,
     DateTime? updatedAt,
   }) {
     return TransferResumeState(
       transferId: transferId,
+      fileId: fileId,
       fileName: fileName,
       totalBytes: totalBytes,
+      totalChunks: totalChunks,
       direction: direction,
+      status: status ?? this.status,
       completedChunkIndexes:
           completedChunkIndexes ?? this.completedChunkIndexes,
+      retryAttempt: retryAttempt ?? this.retryAttempt,
+      nextRetryAt: nextRetryAt ?? this.nextRetryAt,
+      lastErrorCode: lastErrorCode ?? this.lastErrorCode,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -85,10 +126,16 @@ final class TransferResumeState extends Equatable {
   @override
   List<Object?> get props => <Object?>[
     transferId,
+    fileId,
     fileName,
     totalBytes,
+    totalChunks,
     direction,
+    status,
     completedChunkIndexes,
+    retryAttempt,
+    nextRetryAt,
+    lastErrorCode,
     updatedAt,
   ];
 }

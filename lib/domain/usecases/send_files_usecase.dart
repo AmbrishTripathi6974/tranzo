@@ -40,7 +40,9 @@ class SendFiles {
     return _repository.listenIncomingTransfers(receiverId: receiverId);
   }
 
-  Stream<TransferLifecycleSignalEntity> listenSignals({required String userId}) {
+  Stream<TransferLifecycleSignalEntity> listenSignals({
+    required String userId,
+  }) {
     return _repository.listenTransferSignals(userId: userId);
   }
 

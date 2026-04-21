@@ -13,6 +13,8 @@ abstract interface class TransferRepository {
   Future<void> startUpload(TransferTask task);
   Future<void> startDownload(TransferTask task);
   Future<void> retryTransfer(String transferId);
+  Future<void> cancelTransfer(String transferId);
+  Future<void> resumeIncompleteTransfers({String? transferId});
 
   // New domain contracts for transfer lifecycle use cases.
   Future<TransferEntity> sendFiles({
