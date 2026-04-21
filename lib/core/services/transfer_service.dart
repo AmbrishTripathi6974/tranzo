@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:typed_data';
 
 import '../errors/exceptions.dart';
 
@@ -11,6 +12,8 @@ final class TransferService {
   final SupabaseClient _client;
 
   static const String _transferSessionsTable = 'transfer_sessions';
+  static const String _recipientCodesTable = 'recipient_codes';
+  static const String _chunksBucket = 'transfer-chunks';
 
   /// Inserts a session row and returns the persisted record from PostgREST.
   Future<TransferSessionRecord> createTransferSession(
@@ -24,6 +27,47 @@ final class TransferService {
           .single();
       return TransferSessionRecord.fromRow(row);
     } on PostgrestException catch (e) {
+      throw AppException(e.message);
+    }
+  }
+
+  Future<String?> resolveRecipientIdByCode(String rawCode) async {
+    final String normalized = rawCode.trim().toUpperCase();
+    if (normalized.isEmpty) {
+      throw const AppException('Recipient code is required.');
+    }
+    try {
+      final Map<String, dynamic>? row = await _client
+          .from(_recipientCodesTable)
+          .select('user_id')
+          .eq('short_code', normalized)
+          .maybeSingle();
+      return row?['user_id'] as String?;
+    } on PostgrestException catch (e) {
+      throw AppException(e.message);
+    }
+  }
+
+  Future<void> uploadTransferChunk({
+    required String sessionId,
+    required String fileId,
+    required int chunkIndex,
+    required Stream<List<int>> byteStream,
+  }) async {
+    try {
+      final List<int> chunkBytes = await byteStream.fold<List<int>>(
+        <int>[],
+        (List<int> acc, List<int> data) => acc..addAll(data),
+      );
+      final String objectPath = '$sessionId/$fileId/chunk_$chunkIndex.part';
+      await _client.storage
+          .from(_chunksBucket)
+          .uploadBinary(
+            objectPath,
+            Uint8List.fromList(chunkBytes),
+            fileOptions: const FileOptions(upsert: true),
+          );
+    } on StorageException catch (e) {
       throw AppException(e.message);
     }
   }
@@ -69,8 +113,7 @@ final class TransferSessionPayload {
       'status': status,
       'storage_path': storagePath,
       'created_at': createdAt.toUtc().toIso8601String(),
-      if (expiresAt != null)
-        'expires_at': expiresAt!.toUtc().toIso8601String(),
+      if (expiresAt != null) 'expires_at': expiresAt!.toUtc().toIso8601String(),
       if (intentExpiry != null)
         'intent_expiry': intentExpiry!.toUtc().toIso8601String(),
       if (intentScore != null) 'intent_score': intentScore,

@@ -33,13 +33,13 @@ final class DownloadManager {
   }
 
   List<ChunkDescriptor> pendingChunksFor(String transferId) {
-    return _state.pendingChunks(
-      transferId: transferId,
-      chunkManager: _chunks,
-    );
+    return _state.pendingChunks(transferId: transferId, chunkManager: _chunks);
   }
 
-  TransferResumeState? acknowledgeChunkComplete(String transferId, int chunkIndex) {
+  TransferResumeState? acknowledgeChunkComplete(
+    String transferId,
+    int chunkIndex,
+  ) {
     return _state.markChunkComplete(transferId, chunkIndex);
   }
 

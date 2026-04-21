@@ -4,10 +4,7 @@ import '../../domain/entities/transfer_task.dart';
 import '../chunking/chunk_manager.dart';
 
 /// Whether local resume state refers to an upload or download session.
-enum TransferSessionDirection {
-  upload,
-  download,
-}
+enum TransferSessionDirection { upload, download }
 
 /// Serializable progress for resumable chunked transfers (persist via data layer).
 final class TransferResumeState extends Equatable {
@@ -42,8 +39,8 @@ final class TransferResumeState extends Equatable {
   }
 
   factory TransferResumeState.fromJson(Map<String, dynamic> json) {
-    final List<dynamic> raw = json['completedChunkIndexes'] as List<dynamic>? ??
-        const <dynamic>[];
+    final List<dynamic> raw =
+        json['completedChunkIndexes'] as List<dynamic>? ?? const <dynamic>[];
     return TransferResumeState(
       transferId: json['transferId'] as String,
       fileName: json['fileName'] as String,
@@ -99,14 +96,13 @@ final class TransferResumeState extends Equatable {
 /// In-memory coordinator for resume metadata; pair with [TransferLocalDataSource]
 /// when persistence is implemented.
 final class TransferStateManager {
-  final Map<String, TransferResumeState> _byId = <String, TransferResumeState>{};
+  final Map<String, TransferResumeState> _byId =
+      <String, TransferResumeState>{};
 
   TransferResumeState? getState(String transferId) => _byId[transferId];
 
   void putState(TransferResumeState state) {
-    _byId[state.transferId] = state.copyWith(
-      updatedAt: DateTime.now(),
-    );
+    _byId[state.transferId] = state.copyWith(updatedAt: DateTime.now());
   }
 
   TransferResumeState? markChunkComplete(String transferId, int chunkIndex) {

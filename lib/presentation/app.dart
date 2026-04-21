@@ -17,14 +17,14 @@ class App extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiBlocProvider(
       providers: <BlocProvider<dynamic>>[
-        BlocProvider<AuthBloc>(create: (_) => sl<AuthBloc>()..add(const AuthStarted())),
+        BlocProvider<AuthBloc>(
+          create: (_) => sl<AuthBloc>()..add(const AuthStarted()),
+        ),
         BlocProvider<ProfileBloc>(
           create: (_) => sl<ProfileBloc>()..add(const ProfileRequested()),
         ),
         BlocProvider<HistoryBloc>(create: (_) => sl<HistoryBloc>()),
-        BlocProvider<TransferBloc>(
-          create: (_) => sl<TransferBloc>(),
-        ),
+        BlocProvider<TransferBloc>(create: (_) => sl<TransferBloc>()),
       ],
       child: MaterialApp.router(
         title: 'Tranzo',

@@ -40,7 +40,8 @@ final class ExponentialBackoff extends Equatable {
 }
 
 /// Work waiting for its next eligible time (no side effects until consumed).
-final class RetryQueueEntry extends Equatable implements Comparable<RetryQueueEntry> {
+final class RetryQueueEntry extends Equatable
+    implements Comparable<RetryQueueEntry> {
   const RetryQueueEntry({
     required this.id,
     required this.initiator,
@@ -75,8 +76,8 @@ final class RetryQueue {
     this.maxRetries = AppConstants.defaultMaxRetryCount,
     ExponentialBackoff? backoff,
     DateTime Function()? clock,
-  })  : _backoff = backoff ?? const ExponentialBackoff(),
-        _clock = clock ?? DateTime.now;
+  }) : _backoff = backoff ?? const ExponentialBackoff(),
+       _clock = clock ?? DateTime.now;
 
   final int maxRetries;
   final ExponentialBackoff _backoff;

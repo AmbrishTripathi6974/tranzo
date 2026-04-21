@@ -17,6 +17,7 @@ import '../domain/usecases/create_user_usecase.dart';
 import '../domain/usecases/get_current_user_usecase.dart';
 import '../domain/usecases/get_transfer_history_usecase.dart';
 import '../domain/usecases/retry_transfer_usecase.dart';
+import '../domain/usecases/send_files_usecase.dart';
 import '../domain/usecases/start_download_usecase.dart';
 import '../domain/usecases/start_upload_usecase.dart';
 import '../presentation/bloc/auth/auth_bloc.dart';
@@ -59,7 +60,7 @@ Future<void> configureDependencies() async {
 
   // Transfer data sources
   sl.registerLazySingleton<TransferRemoteDataSource>(
-    TransferRemoteDataSourceImpl.new,
+    () => TransferRemoteDataSourceImpl(sl<TransferService>()),
   );
   sl.registerLazySingleton<TransferLocalDataSource>(
     TransferLocalDataSourceImpl.new,
@@ -103,9 +104,7 @@ Future<void> configureDependencies() async {
   );
 
   // Use cases
-  sl.registerLazySingleton<CreateUser>(
-    () => CreateUser(sl<AuthRepository>()),
-  );
+  sl.registerLazySingleton<CreateUser>(() => CreateUser(sl<AuthRepository>()));
   sl.registerLazySingleton<GetCurrentUser>(
     () => GetCurrentUser(sl<AuthRepository>()),
   );
@@ -121,6 +120,9 @@ Future<void> configureDependencies() async {
   sl.registerLazySingleton<RetryTransferUseCase>(
     () => RetryTransferUseCase(sl<TransferRepository>()),
   );
+  sl.registerLazySingleton<SendFiles>(
+    () => SendFiles(sl<TransferRepository>()),
+  );
 
   // Blocs
   sl.registerFactory<AuthBloc>(
@@ -130,20 +132,17 @@ Future<void> configureDependencies() async {
     ),
   );
   sl.registerFactory<HistoryBloc>(
-    () => HistoryBloc(
-      getTransferHistory: sl<GetTransferHistory>(),
-    ),
+    () => HistoryBloc(getTransferHistory: sl<GetTransferHistory>()),
   );
   sl.registerFactory<ProfileBloc>(
-    () => ProfileBloc(
-      getCurrentUser: sl<GetCurrentUser>(),
-    ),
+    () => ProfileBloc(getCurrentUser: sl<GetCurrentUser>()),
   );
   sl.registerFactory<TransferBloc>(
     () => TransferBloc(
       startUpload: sl<StartUploadUseCase>(),
       startDownload: sl<StartDownloadUseCase>(),
       retryTransfer: sl<RetryTransferUseCase>(),
+      sendFiles: sl<SendFiles>(),
     ),
   );
 }

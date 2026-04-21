@@ -5,6 +5,7 @@ class TransferTaskModel extends TransferTask {
     required super.id,
     required super.fileName,
     required super.totalBytes,
+    super.localPath,
   });
 
   factory TransferTaskModel.fromEntity(TransferTask task) {
@@ -12,6 +13,7 @@ class TransferTaskModel extends TransferTask {
       id: task.id,
       fileName: task.fileName,
       totalBytes: task.totalBytes,
+      localPath: task.localPath,
     );
   }
 
@@ -20,6 +22,7 @@ class TransferTaskModel extends TransferTask {
       id: json['id'] as String,
       fileName: json['fileName'] as String,
       totalBytes: json['totalBytes'] as int,
+      localPath: json['localPath'] as String?,
     );
   }
 
@@ -28,6 +31,7 @@ class TransferTaskModel extends TransferTask {
       'id': id,
       'fileName': fileName,
       'totalBytes': totalBytes,
+      'localPath': localPath,
     };
   }
 }

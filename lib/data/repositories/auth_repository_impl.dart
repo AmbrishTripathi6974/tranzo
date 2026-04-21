@@ -42,7 +42,9 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<UserEntity?> getCurrentUser() async {
-    final UserCollection? cached = await _isar.userCollections.where().findFirst();
+    final UserCollection? cached = await _isar.userCollections
+        .where()
+        .findFirst();
     if (cached == null) {
       return null;
     }

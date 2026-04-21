@@ -36,14 +36,14 @@ final class UploadManager {
 
   /// Chunks still outstanding according to local progress.
   List<ChunkDescriptor> pendingChunksFor(String transferId) {
-    return _state.pendingChunks(
-      transferId: transferId,
-      chunkManager: _chunks,
-    );
+    return _state.pendingChunks(transferId: transferId, chunkManager: _chunks);
   }
 
   /// Marks a chunk finished locally (caller persists via data layer when wired).
-  TransferResumeState? acknowledgeChunkComplete(String transferId, int chunkIndex) {
+  TransferResumeState? acknowledgeChunkComplete(
+    String transferId,
+    int chunkIndex,
+  ) {
     return _state.markChunkComplete(transferId, chunkIndex);
   }
 

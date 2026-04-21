@@ -24,7 +24,9 @@ class HistoryState extends Equatable {
     return HistoryState(
       status: status ?? this.status,
       items: items ?? this.items,
-      errorMessage: clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
+      errorMessage: clearErrorMessage
+          ? null
+          : (errorMessage ?? this.errorMessage),
     );
   }
 

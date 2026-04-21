@@ -2,6 +2,8 @@ import '../entities/transfer_task.dart';
 import '../entities/user_entity.dart';
 import '../entities/transfer_entity.dart';
 import '../entities/file_entity.dart';
+import '../entities/selected_transfer_file.dart';
+import '../entities/transfer_batch_progress.dart';
 
 abstract interface class TransferRepository {
   // Legacy transfer-task API kept for existing wiring.
@@ -19,4 +21,10 @@ abstract interface class TransferRepository {
   Future<TransferEntity> receiveFiles(String transferId);
 
   Future<List<TransferEntity>> getTransferHistory(String userId);
+
+  Stream<TransferBatchProgress> sendFilesInBatch({
+    required String senderId,
+    required String recipientCode,
+    required List<SelectedTransferFile> files,
+  });
 }

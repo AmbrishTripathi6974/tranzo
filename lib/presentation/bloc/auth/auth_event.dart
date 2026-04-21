@@ -12,10 +12,7 @@ class AuthStarted extends AuthEvent {
 }
 
 class AuthUserCreated extends AuthEvent {
-  const AuthUserCreated({
-    required this.shortCode,
-    required this.username,
-  });
+  const AuthUserCreated({required this.shortCode, required this.username});
 
   final String shortCode;
   final String username;

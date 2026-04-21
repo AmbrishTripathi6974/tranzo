@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 
+import '../../../domain/entities/transfer_batch_progress.dart';
+
 enum TransferStatus { initial, loading, success, error }
 
 class TransferState extends Equatable {
@@ -8,20 +10,27 @@ class TransferState extends Equatable {
     this.progress = 0,
     this.activeTransferId,
     this.errorMessage,
+    this.batchProgressByFileId = const <String, TransferFileProgress>{},
+    this.batchSessionId,
   });
 
   final TransferStatus status;
   final double progress;
   final String? activeTransferId;
   final String? errorMessage;
+  final Map<String, TransferFileProgress> batchProgressByFileId;
+  final String? batchSessionId;
 
   TransferState copyWith({
     TransferStatus? status,
     double? progress,
     String? activeTransferId,
     String? errorMessage,
+    Map<String, TransferFileProgress>? batchProgressByFileId,
+    String? batchSessionId,
     bool clearActiveTransferId = false,
     bool clearErrorMessage = false,
+    bool clearBatchProgress = false,
   }) {
     return TransferState(
       status: status ?? this.status,
@@ -29,7 +38,15 @@ class TransferState extends Equatable {
       activeTransferId: clearActiveTransferId
           ? null
           : (activeTransferId ?? this.activeTransferId),
-      errorMessage: clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
+      errorMessage: clearErrorMessage
+          ? null
+          : (errorMessage ?? this.errorMessage),
+      batchProgressByFileId: clearBatchProgress
+          ? const <String, TransferFileProgress>{}
+          : (batchProgressByFileId ?? this.batchProgressByFileId),
+      batchSessionId: clearBatchProgress
+          ? null
+          : (batchSessionId ?? this.batchSessionId),
     );
   }
 
@@ -39,5 +56,7 @@ class TransferState extends Equatable {
     progress,
     activeTransferId,
     errorMessage,
+    batchProgressByFileId,
+    batchSessionId,
   ];
 }

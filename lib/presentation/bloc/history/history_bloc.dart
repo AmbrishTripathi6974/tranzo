@@ -17,7 +17,9 @@ class HistoryBloc extends Bloc<HistoryEvent, HistoryState> {
     HistoryRequested event,
     Emitter<HistoryState> emit,
   ) async {
-    emit(state.copyWith(status: HistoryStatus.loading, clearErrorMessage: true));
+    emit(
+      state.copyWith(status: HistoryStatus.loading, clearErrorMessage: true),
+    );
     try {
       final items = await _getTransferHistory(event.userId);
       emit(

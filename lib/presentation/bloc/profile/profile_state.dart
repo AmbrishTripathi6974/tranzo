@@ -24,7 +24,9 @@ class ProfileState extends Equatable {
     return ProfileState(
       status: status ?? this.status,
       user: user ?? this.user,
-      errorMessage: clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
+      errorMessage: clearErrorMessage
+          ? null
+          : (errorMessage ?? this.errorMessage),
     );
   }
 

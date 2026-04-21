@@ -17,7 +17,9 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     ProfileRequested event,
     Emitter<ProfileState> emit,
   ) async {
-    emit(state.copyWith(status: ProfileStatus.loading, clearErrorMessage: true));
+    emit(
+      state.copyWith(status: ProfileStatus.loading, clearErrorMessage: true),
+    );
     try {
       final user = await _getCurrentUser();
       emit(state.copyWith(status: ProfileStatus.success, user: user));

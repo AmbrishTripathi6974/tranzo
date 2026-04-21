@@ -7,6 +7,8 @@ abstract interface class TransferLocalDataSource {
 class TransferLocalDataSourceImpl implements TransferLocalDataSource {
   @override
   Future<void> saveTransferMetadata(TransferTaskModel task) async {
-    throw UnimplementedError('Local storage integration is not implemented yet.');
+    throw UnimplementedError(
+      'Local storage integration is not implemented yet.',
+    );
   }
 }

@@ -16,8 +16,7 @@ final class AuthService {
   static const String _recipientCodesTable = 'recipient_codes';
   static const int _shortCodeLength = 6;
   static const int _shortCodeMaxAttempts = 12;
-  static const String _shortCodeAlphabet =
-      'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  static const String _shortCodeAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
   /// Signs in anonymously and persists a human-facing [shortCode] for pairing.
   Future<AnonymousUserResult> createAnonymousUserWithShortCode() async {
