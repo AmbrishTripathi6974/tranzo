@@ -14,6 +14,8 @@ class TransferCollection {
 
   late String senderId;
   late String receiverId;
+  String? senderUsername;
+  String? receiverUsername;
 
   @Enumerated(EnumType.ordinal)
   late TransferStatus status;

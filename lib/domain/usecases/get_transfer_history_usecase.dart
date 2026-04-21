@@ -1,8 +1,8 @@
 import '../entities/transfer_entity.dart';
 import '../repositories/transfer_repository.dart';
 
-class GetTransferHistory {
-  const GetTransferHistory(this._repository);
+class GetTransferHistoryUseCase {
+  const GetTransferHistoryUseCase(this._repository);
 
   final TransferRepository _repository;
 
@@ -10,3 +10,5 @@ class GetTransferHistory {
     return _repository.getTransferHistory(userId);
   }
 }
+
+typedef GetTransferHistory = GetTransferHistoryUseCase;

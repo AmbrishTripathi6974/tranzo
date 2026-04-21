@@ -159,12 +159,14 @@ const _FileCollectionstatusEnumValueMap = {
   'uploading': 1,
   'completed': 2,
   'failed': 3,
+  'corrupted': 4,
 };
 const _FileCollectionstatusValueEnumMap = {
   0: FileStatus.pending,
   1: FileStatus.uploading,
   2: FileStatus.completed,
   3: FileStatus.failed,
+  4: FileStatus.corrupted,
 };
 
 Id _fileCollectionGetId(FileCollection object) {

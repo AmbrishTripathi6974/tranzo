@@ -113,8 +113,8 @@ Future<void> configureDependencies() async {
   sl.registerLazySingleton<GetCurrentUser>(
     () => GetCurrentUser(sl<AuthRepository>()),
   );
-  sl.registerLazySingleton<GetTransferHistory>(
-    () => GetTransferHistory(sl<TransferRepository>()),
+  sl.registerLazySingleton<GetTransferHistoryUseCase>(
+    () => GetTransferHistoryUseCase(sl<TransferRepository>()),
   );
   sl.registerLazySingleton<StartUploadUseCase>(
     () => StartUploadUseCase(sl<TransferRepository>()),
@@ -137,7 +137,7 @@ Future<void> configureDependencies() async {
     ),
   );
   sl.registerFactory<HistoryBloc>(
-    () => HistoryBloc(getTransferHistory: sl<GetTransferHistory>()),
+    () => HistoryBloc(getTransferHistory: sl<GetTransferHistoryUseCase>()),
   );
   sl.registerFactory<ProfileBloc>(
     () => ProfileBloc(getCurrentUser: sl<GetCurrentUser>()),

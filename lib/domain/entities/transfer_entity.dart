@@ -9,6 +9,10 @@ class TransferEntity extends Equatable {
     required this.receiverId,
     required this.status,
     required this.createdAt,
+    required this.fileName,
+    required this.fileSize,
+    this.senderUsername,
+    this.receiverUsername,
     this.expiresAt,
   });
 
@@ -17,6 +21,10 @@ class TransferEntity extends Equatable {
   final String receiverId;
   final TransferStatus status;
   final DateTime createdAt;
+  final String fileName;
+  final int fileSize;
+  final String? senderUsername;
+  final String? receiverUsername;
   final DateTime? expiresAt;
 
   @override
@@ -26,6 +34,10 @@ class TransferEntity extends Equatable {
     receiverId,
     status,
     createdAt,
+    fileName,
+    fileSize,
+    senderUsername,
+    receiverUsername,
     expiresAt,
   ];
 }

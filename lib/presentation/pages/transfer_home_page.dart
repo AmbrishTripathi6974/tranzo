@@ -26,13 +26,13 @@ class TransferHomePage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: () => context.push(RouteNames.upload),
-              child: const Text('Go to Upload'),
+              onPressed: () => context.go(RouteNames.transfer),
+              child: const Text('Go to Transfer'),
             ),
             const SizedBox(height: 8),
             FilledButton.tonal(
-              onPressed: () => context.push(RouteNames.download),
-              child: const Text('Go to Download'),
+              onPressed: () => context.go(RouteNames.history),
+              child: const Text('Go to History'),
             ),
           ],
         ),

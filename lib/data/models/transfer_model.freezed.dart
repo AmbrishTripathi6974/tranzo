@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$TransferModel {
 
- String get id; String get senderId; String get receiverId;@JsonKey(fromJson: _statusFromJson, toJson: _statusToJson) TransferStatus get status; DateTime get createdAt; DateTime? get expiresAt;
+ String get id; String get senderId; String get receiverId; String? get senderUsername; String? get receiverUsername; String get fileName; int get fileSize;@JsonKey(fromJson: _statusFromJson, toJson: _statusToJson) TransferStatus get status; DateTime get createdAt; DateTime? get expiresAt;
 /// Create a copy of TransferModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $TransferModelCopyWith<TransferModel> get copyWith => _$TransferModelCopyWithImp
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is TransferModel&&(identical(other.id, id) || other.id == id)&&(identical(other.senderId, senderId) || other.senderId == senderId)&&(identical(other.receiverId, receiverId) || other.receiverId == receiverId)&&(identical(other.status, status) || other.status == status)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.expiresAt, expiresAt) || other.expiresAt == expiresAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is TransferModel&&(identical(other.id, id) || other.id == id)&&(identical(other.senderId, senderId) || other.senderId == senderId)&&(identical(other.receiverId, receiverId) || other.receiverId == receiverId)&&(identical(other.senderUsername, senderUsername) || other.senderUsername == senderUsername)&&(identical(other.receiverUsername, receiverUsername) || other.receiverUsername == receiverUsername)&&(identical(other.fileName, fileName) || other.fileName == fileName)&&(identical(other.fileSize, fileSize) || other.fileSize == fileSize)&&(identical(other.status, status) || other.status == status)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.expiresAt, expiresAt) || other.expiresAt == expiresAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,senderId,receiverId,status,createdAt,expiresAt);
+int get hashCode => Object.hash(runtimeType,id,senderId,receiverId,senderUsername,receiverUsername,fileName,fileSize,status,createdAt,expiresAt);
 
 @override
 String toString() {
-  return 'TransferModel(id: $id, senderId: $senderId, receiverId: $receiverId, status: $status, createdAt: $createdAt, expiresAt: $expiresAt)';
+  return 'TransferModel(id: $id, senderId: $senderId, receiverId: $receiverId, senderUsername: $senderUsername, receiverUsername: $receiverUsername, fileName: $fileName, fileSize: $fileSize, status: $status, createdAt: $createdAt, expiresAt: $expiresAt)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $TransferModelCopyWith<$Res>  {
   factory $TransferModelCopyWith(TransferModel value, $Res Function(TransferModel) _then) = _$TransferModelCopyWithImpl;
 @useResult
 $Res call({
- String id, String senderId, String receiverId,@JsonKey(fromJson: _statusFromJson, toJson: _statusToJson) TransferStatus status, DateTime createdAt, DateTime? expiresAt
+ String id, String senderId, String receiverId, String? senderUsername, String? receiverUsername, String fileName, int fileSize,@JsonKey(fromJson: _statusFromJson, toJson: _statusToJson) TransferStatus status, DateTime createdAt, DateTime? expiresAt
 });
 
 
@@ -65,12 +65,16 @@ class _$TransferModelCopyWithImpl<$Res>
 
 /// Create a copy of TransferModel
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? senderId = null,Object? receiverId = null,Object? status = null,Object? createdAt = null,Object? expiresAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? senderId = null,Object? receiverId = null,Object? senderUsername = freezed,Object? receiverUsername = freezed,Object? fileName = null,Object? fileSize = null,Object? status = null,Object? createdAt = null,Object? expiresAt = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,senderId: null == senderId ? _self.senderId : senderId // ignore: cast_nullable_to_non_nullable
 as String,receiverId: null == receiverId ? _self.receiverId : receiverId // ignore: cast_nullable_to_non_nullable
-as String,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
+as String,senderUsername: freezed == senderUsername ? _self.senderUsername : senderUsername // ignore: cast_nullable_to_non_nullable
+as String?,receiverUsername: freezed == receiverUsername ? _self.receiverUsername : receiverUsername // ignore: cast_nullable_to_non_nullable
+as String?,fileName: null == fileName ? _self.fileName : fileName // ignore: cast_nullable_to_non_nullable
+as String,fileSize: null == fileSize ? _self.fileSize : fileSize // ignore: cast_nullable_to_non_nullable
+as int,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as TransferStatus,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,expiresAt: freezed == expiresAt ? _self.expiresAt : expiresAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,
@@ -158,10 +162,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String senderId,  String receiverId, @JsonKey(fromJson: _statusFromJson, toJson: _statusToJson)  TransferStatus status,  DateTime createdAt,  DateTime? expiresAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String senderId,  String receiverId,  String? senderUsername,  String? receiverUsername,  String fileName,  int fileSize, @JsonKey(fromJson: _statusFromJson, toJson: _statusToJson)  TransferStatus status,  DateTime createdAt,  DateTime? expiresAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _TransferModel() when $default != null:
-return $default(_that.id,_that.senderId,_that.receiverId,_that.status,_that.createdAt,_that.expiresAt);case _:
+return $default(_that.id,_that.senderId,_that.receiverId,_that.senderUsername,_that.receiverUsername,_that.fileName,_that.fileSize,_that.status,_that.createdAt,_that.expiresAt);case _:
   return orElse();
 
 }
@@ -179,10 +183,10 @@ return $default(_that.id,_that.senderId,_that.receiverId,_that.status,_that.crea
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String senderId,  String receiverId, @JsonKey(fromJson: _statusFromJson, toJson: _statusToJson)  TransferStatus status,  DateTime createdAt,  DateTime? expiresAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String senderId,  String receiverId,  String? senderUsername,  String? receiverUsername,  String fileName,  int fileSize, @JsonKey(fromJson: _statusFromJson, toJson: _statusToJson)  TransferStatus status,  DateTime createdAt,  DateTime? expiresAt)  $default,) {final _that = this;
 switch (_that) {
 case _TransferModel():
-return $default(_that.id,_that.senderId,_that.receiverId,_that.status,_that.createdAt,_that.expiresAt);case _:
+return $default(_that.id,_that.senderId,_that.receiverId,_that.senderUsername,_that.receiverUsername,_that.fileName,_that.fileSize,_that.status,_that.createdAt,_that.expiresAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -199,10 +203,10 @@ return $default(_that.id,_that.senderId,_that.receiverId,_that.status,_that.crea
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String senderId,  String receiverId, @JsonKey(fromJson: _statusFromJson, toJson: _statusToJson)  TransferStatus status,  DateTime createdAt,  DateTime? expiresAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String senderId,  String receiverId,  String? senderUsername,  String? receiverUsername,  String fileName,  int fileSize, @JsonKey(fromJson: _statusFromJson, toJson: _statusToJson)  TransferStatus status,  DateTime createdAt,  DateTime? expiresAt)?  $default,) {final _that = this;
 switch (_that) {
 case _TransferModel() when $default != null:
-return $default(_that.id,_that.senderId,_that.receiverId,_that.status,_that.createdAt,_that.expiresAt);case _:
+return $default(_that.id,_that.senderId,_that.receiverId,_that.senderUsername,_that.receiverUsername,_that.fileName,_that.fileSize,_that.status,_that.createdAt,_that.expiresAt);case _:
   return null;
 
 }
@@ -214,12 +218,16 @@ return $default(_that.id,_that.senderId,_that.receiverId,_that.status,_that.crea
 @JsonSerializable()
 
 class _TransferModel extends TransferModel {
-  const _TransferModel({required this.id, required this.senderId, required this.receiverId, @JsonKey(fromJson: _statusFromJson, toJson: _statusToJson) required this.status, required this.createdAt, this.expiresAt}): super._();
+  const _TransferModel({required this.id, required this.senderId, required this.receiverId, this.senderUsername, this.receiverUsername, required this.fileName, required this.fileSize, @JsonKey(fromJson: _statusFromJson, toJson: _statusToJson) required this.status, required this.createdAt, this.expiresAt}): super._();
   factory _TransferModel.fromJson(Map<String, dynamic> json) => _$TransferModelFromJson(json);
 
 @override final  String id;
 @override final  String senderId;
 @override final  String receiverId;
+@override final  String? senderUsername;
+@override final  String? receiverUsername;
+@override final  String fileName;
+@override final  int fileSize;
 @override@JsonKey(fromJson: _statusFromJson, toJson: _statusToJson) final  TransferStatus status;
 @override final  DateTime createdAt;
 @override final  DateTime? expiresAt;
@@ -237,16 +245,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _TransferModel&&(identical(other.id, id) || other.id == id)&&(identical(other.senderId, senderId) || other.senderId == senderId)&&(identical(other.receiverId, receiverId) || other.receiverId == receiverId)&&(identical(other.status, status) || other.status == status)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.expiresAt, expiresAt) || other.expiresAt == expiresAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _TransferModel&&(identical(other.id, id) || other.id == id)&&(identical(other.senderId, senderId) || other.senderId == senderId)&&(identical(other.receiverId, receiverId) || other.receiverId == receiverId)&&(identical(other.senderUsername, senderUsername) || other.senderUsername == senderUsername)&&(identical(other.receiverUsername, receiverUsername) || other.receiverUsername == receiverUsername)&&(identical(other.fileName, fileName) || other.fileName == fileName)&&(identical(other.fileSize, fileSize) || other.fileSize == fileSize)&&(identical(other.status, status) || other.status == status)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.expiresAt, expiresAt) || other.expiresAt == expiresAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,senderId,receiverId,status,createdAt,expiresAt);
+int get hashCode => Object.hash(runtimeType,id,senderId,receiverId,senderUsername,receiverUsername,fileName,fileSize,status,createdAt,expiresAt);
 
 @override
 String toString() {
-  return 'TransferModel(id: $id, senderId: $senderId, receiverId: $receiverId, status: $status, createdAt: $createdAt, expiresAt: $expiresAt)';
+  return 'TransferModel(id: $id, senderId: $senderId, receiverId: $receiverId, senderUsername: $senderUsername, receiverUsername: $receiverUsername, fileName: $fileName, fileSize: $fileSize, status: $status, createdAt: $createdAt, expiresAt: $expiresAt)';
 }
 
 
@@ -257,7 +265,7 @@ abstract mixin class _$TransferModelCopyWith<$Res> implements $TransferModelCopy
   factory _$TransferModelCopyWith(_TransferModel value, $Res Function(_TransferModel) _then) = __$TransferModelCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String senderId, String receiverId,@JsonKey(fromJson: _statusFromJson, toJson: _statusToJson) TransferStatus status, DateTime createdAt, DateTime? expiresAt
+ String id, String senderId, String receiverId, String? senderUsername, String? receiverUsername, String fileName, int fileSize,@JsonKey(fromJson: _statusFromJson, toJson: _statusToJson) TransferStatus status, DateTime createdAt, DateTime? expiresAt
 });
 
 
@@ -274,12 +282,16 @@ class __$TransferModelCopyWithImpl<$Res>
 
 /// Create a copy of TransferModel
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? senderId = null,Object? receiverId = null,Object? status = null,Object? createdAt = null,Object? expiresAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? senderId = null,Object? receiverId = null,Object? senderUsername = freezed,Object? receiverUsername = freezed,Object? fileName = null,Object? fileSize = null,Object? status = null,Object? createdAt = null,Object? expiresAt = freezed,}) {
   return _then(_TransferModel(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,senderId: null == senderId ? _self.senderId : senderId // ignore: cast_nullable_to_non_nullable
 as String,receiverId: null == receiverId ? _self.receiverId : receiverId // ignore: cast_nullable_to_non_nullable
-as String,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
+as String,senderUsername: freezed == senderUsername ? _self.senderUsername : senderUsername // ignore: cast_nullable_to_non_nullable
+as String?,receiverUsername: freezed == receiverUsername ? _self.receiverUsername : receiverUsername // ignore: cast_nullable_to_non_nullable
+as String?,fileName: null == fileName ? _self.fileName : fileName // ignore: cast_nullable_to_non_nullable
+as String,fileSize: null == fileSize ? _self.fileSize : fileSize // ignore: cast_nullable_to_non_nullable
+as int,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as TransferStatus,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,expiresAt: freezed == expiresAt ? _self.expiresAt : expiresAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,

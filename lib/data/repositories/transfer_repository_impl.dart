@@ -116,6 +116,10 @@ class TransferRepositoryImpl implements TransferRepository {
       receiverId: remoteSession.receiverId,
       status: TransferStatus.pending,
       createdAt: now,
+      fileName: primaryFile.fileName,
+      fileSize: primaryFile.size,
+      senderUsername: sender.username,
+      receiverUsername: receiver.username,
       expiresAt: null,
     );
 
@@ -165,6 +169,8 @@ class TransferRepositoryImpl implements TransferRepository {
         transferId: parsed.transferId,
         senderId: parsed.senderId,
         receiverId: parsed.receiverId,
+        senderUsername: null,
+        receiverUsername: null,
         fileId: parsed.fileId,
         fileName: parsed.fileName,
         fileSize: parsed.fileSize,
@@ -192,6 +198,8 @@ class TransferRepositoryImpl implements TransferRepository {
         transferId: offer.transferId,
         senderId: offer.senderId,
         receiverId: offer.receiverId,
+        senderUsername: null,
+        receiverUsername: null,
         fileId: offer.fileId,
         fileName: offer.fileName,
         fileSize: offer.fileSize,
@@ -504,6 +512,8 @@ class TransferRepositoryImpl implements TransferRepository {
         ..transferId = transferEntity.id
         ..senderId = transferEntity.senderId
         ..receiverId = transferEntity.receiverId
+        ..senderUsername = transferEntity.senderUsername
+        ..receiverUsername = transferEntity.receiverUsername
         ..status = transferEntity.status
         ..createdAt = transferEntity.createdAt
         ..expiresAt = transferEntity.expiresAt
@@ -524,6 +534,10 @@ class TransferRepositoryImpl implements TransferRepository {
       receiverId: collection.receiverId,
       status: collection.status,
       createdAt: collection.createdAt,
+      fileName: collection.fileName ?? 'Unknown file',
+      fileSize: collection.fileSize ?? 0,
+      senderUsername: collection.senderUsername,
+      receiverUsername: collection.receiverUsername,
       expiresAt: collection.expiresAt,
     );
   }

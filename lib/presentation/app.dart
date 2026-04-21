@@ -8,7 +8,7 @@ import 'bloc/history/history_bloc.dart';
 import 'bloc/profile/profile_bloc.dart';
 import 'bloc/profile/profile_event.dart';
 import 'bloc/transfer/transfer_bloc.dart';
-import 'router/app_router.dart';
+import 'navigation/app_router.dart';
 
 class App extends StatelessWidget {
   const App({super.key});

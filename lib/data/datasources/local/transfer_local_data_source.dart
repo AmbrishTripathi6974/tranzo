@@ -14,6 +14,8 @@ abstract interface class TransferLocalDataSource {
     required String transferId,
     required String senderId,
     required String receiverId,
+    String? senderUsername,
+    String? receiverUsername,
     required String fileId,
     required String fileName,
     required int fileSize,
@@ -73,6 +75,8 @@ class TransferLocalDataSourceImpl implements TransferLocalDataSource {
     required String transferId,
     required String senderId,
     required String receiverId,
+    String? senderUsername,
+    String? receiverUsername,
     required String fileId,
     required String fileName,
     required int fileSize,
@@ -86,6 +90,8 @@ class TransferLocalDataSourceImpl implements TransferLocalDataSource {
         ..transferId = transferId
         ..senderId = senderId
         ..receiverId = receiverId
+        ..senderUsername = senderUsername
+        ..receiverUsername = receiverUsername
         ..status = status
         ..createdAt = createdAt
         ..fileName = fileName

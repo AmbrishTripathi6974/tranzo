@@ -1,5 +1,6 @@
 abstract final class RouteNames {
-  static const String home = '/';
-  static const String upload = '/upload';
-  static const String download = '/download';
+  static const String home = '/home';
+  static const String transfer = '/transfer';
+  static const String history = '/history';
+  static const String profile = '/profile';
 }

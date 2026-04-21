@@ -54,24 +54,34 @@ const TransferCollectionSchema = CollectionSchema(
       name: r'receiverId',
       type: IsarType.string,
     ),
-    r'senderId': PropertySchema(
+    r'receiverUsername': PropertySchema(
       id: 8,
+      name: r'receiverUsername',
+      type: IsarType.string,
+    ),
+    r'senderId': PropertySchema(
+      id: 9,
       name: r'senderId',
       type: IsarType.string,
     ),
+    r'senderUsername': PropertySchema(
+      id: 10,
+      name: r'senderUsername',
+      type: IsarType.string,
+    ),
     r'status': PropertySchema(
-      id: 9,
+      id: 11,
       name: r'status',
       type: IsarType.byte,
       enumMap: _TransferCollectionstatusEnumValueMap,
     ),
     r'storagePath': PropertySchema(
-      id: 10,
+      id: 12,
       name: r'storagePath',
       type: IsarType.string,
     ),
     r'transferId': PropertySchema(
-      id: 11,
+      id: 13,
       name: r'transferId',
       type: IsarType.string,
     ),
@@ -125,7 +135,19 @@ int _transferCollectionEstimateSize(
     }
   }
   bytesCount += 3 + object.receiverId.length * 3;
+  {
+    final value = object.receiverUsername;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.senderId.length * 3;
+  {
+    final value = object.senderUsername;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   {
     final value = object.storagePath;
     if (value != null) {
@@ -150,10 +172,12 @@ void _transferCollectionSerialize(
   writer.writeDateTime(offsets[5], object.intentExpiry);
   writer.writeDouble(offsets[6], object.intentScore);
   writer.writeString(offsets[7], object.receiverId);
-  writer.writeString(offsets[8], object.senderId);
-  writer.writeByte(offsets[9], object.status.index);
-  writer.writeString(offsets[10], object.storagePath);
-  writer.writeString(offsets[11], object.transferId);
+  writer.writeString(offsets[8], object.receiverUsername);
+  writer.writeString(offsets[9], object.senderId);
+  writer.writeString(offsets[10], object.senderUsername);
+  writer.writeByte(offsets[11], object.status.index);
+  writer.writeString(offsets[12], object.storagePath);
+  writer.writeString(offsets[13], object.transferId);
 }
 
 TransferCollection _transferCollectionDeserialize(
@@ -172,14 +196,16 @@ TransferCollection _transferCollectionDeserialize(
   object.intentExpiry = reader.readDateTimeOrNull(offsets[5]);
   object.intentScore = reader.readDoubleOrNull(offsets[6]);
   object.receiverId = reader.readString(offsets[7]);
-  object.senderId = reader.readString(offsets[8]);
+  object.receiverUsername = reader.readStringOrNull(offsets[8]);
+  object.senderId = reader.readString(offsets[9]);
+  object.senderUsername = reader.readStringOrNull(offsets[10]);
   object.status =
       _TransferCollectionstatusValueEnumMap[reader.readByteOrNull(
-        offsets[9],
+        offsets[11],
       )] ??
       TransferStatus.pending;
-  object.storagePath = reader.readStringOrNull(offsets[10]);
-  object.transferId = reader.readString(offsets[11]);
+  object.storagePath = reader.readStringOrNull(offsets[12]);
+  object.transferId = reader.readString(offsets[13]);
   return object;
 }
 
@@ -207,16 +233,20 @@ P _transferCollectionDeserializeProp<P>(
     case 7:
       return (reader.readString(offset)) as P;
     case 8:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 9:
+      return (reader.readString(offset)) as P;
+    case 10:
+      return (reader.readStringOrNull(offset)) as P;
+    case 11:
       return (_TransferCollectionstatusValueEnumMap[reader.readByteOrNull(
                 offset,
               )] ??
               TransferStatus.pending)
           as P;
-    case 10:
+    case 12:
       return (reader.readStringOrNull(offset)) as P;
-    case 11:
+    case 13:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -1334,6 +1364,165 @@ extension TransferCollectionQueryFilter
   }
 
   QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  receiverUsernameIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'receiverUsername'),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  receiverUsernameIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'receiverUsername'),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  receiverUsernameEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'receiverUsername',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  receiverUsernameGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'receiverUsername',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  receiverUsernameLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'receiverUsername',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  receiverUsernameBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'receiverUsername',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  receiverUsernameStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'receiverUsername',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  receiverUsernameEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'receiverUsername',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  receiverUsernameContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'receiverUsername',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  receiverUsernameMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'receiverUsername',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  receiverUsernameIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'receiverUsername', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  receiverUsernameIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'receiverUsername', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
   senderIdEqualTo(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -1470,6 +1659,165 @@ extension TransferCollectionQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'senderId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  senderUsernameIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'senderUsername'),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  senderUsernameIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'senderUsername'),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  senderUsernameEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'senderUsername',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  senderUsernameGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'senderUsername',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  senderUsernameLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'senderUsername',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  senderUsernameBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'senderUsername',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  senderUsernameStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'senderUsername',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  senderUsernameEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'senderUsername',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  senderUsernameContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'senderUsername',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  senderUsernameMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'senderUsername',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  senderUsernameIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'senderUsername', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterFilterCondition>
+  senderUsernameIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'senderUsername', value: ''),
       );
     });
   }
@@ -1951,6 +2299,20 @@ extension TransferCollectionQuerySortBy
   }
 
   QueryBuilder<TransferCollection, TransferCollection, QAfterSortBy>
+  sortByReceiverUsername() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receiverUsername', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterSortBy>
+  sortByReceiverUsernameDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receiverUsername', Sort.desc);
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterSortBy>
   sortBySenderId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'senderId', Sort.asc);
@@ -1961,6 +2323,20 @@ extension TransferCollectionQuerySortBy
   sortBySenderIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'senderId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterSortBy>
+  sortBySenderUsername() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'senderUsername', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterSortBy>
+  sortBySenderUsernameDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'senderUsername', Sort.desc);
     });
   }
 
@@ -2136,6 +2512,20 @@ extension TransferCollectionQuerySortThenBy
   }
 
   QueryBuilder<TransferCollection, TransferCollection, QAfterSortBy>
+  thenByReceiverUsername() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receiverUsername', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterSortBy>
+  thenByReceiverUsernameDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receiverUsername', Sort.desc);
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterSortBy>
   thenBySenderId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'senderId', Sort.asc);
@@ -2146,6 +2536,20 @@ extension TransferCollectionQuerySortThenBy
   thenBySenderIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'senderId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterSortBy>
+  thenBySenderUsername() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'senderUsername', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QAfterSortBy>
+  thenBySenderUsernameDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'senderUsername', Sort.desc);
     });
   }
 
@@ -2251,9 +2655,29 @@ extension TransferCollectionQueryWhereDistinct
   }
 
   QueryBuilder<TransferCollection, TransferCollection, QDistinct>
+  distinctByReceiverUsername({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'receiverUsername',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QDistinct>
   distinctBySenderId({bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'senderId', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<TransferCollection, TransferCollection, QDistinct>
+  distinctBySenderUsername({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'senderUsername',
+        caseSensitive: caseSensitive,
+      );
     });
   }
 
@@ -2342,10 +2766,24 @@ extension TransferCollectionQueryProperty
     });
   }
 
+  QueryBuilder<TransferCollection, String?, QQueryOperations>
+  receiverUsernameProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'receiverUsername');
+    });
+  }
+
   QueryBuilder<TransferCollection, String, QQueryOperations>
   senderIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'senderId');
+    });
+  }
+
+  QueryBuilder<TransferCollection, String?, QQueryOperations>
+  senderUsernameProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'senderUsername');
     });
   }
 
