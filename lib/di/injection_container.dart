@@ -15,10 +15,14 @@ import '../domain/repositories/auth_repository.dart';
 import '../domain/repositories/transfer_repository.dart';
 import '../domain/usecases/create_user_usecase.dart';
 import '../domain/usecases/get_current_user_usecase.dart';
+import '../domain/usecases/get_transfer_history_usecase.dart';
 import '../domain/usecases/retry_transfer_usecase.dart';
 import '../domain/usecases/start_download_usecase.dart';
 import '../domain/usecases/start_upload_usecase.dart';
-import '../presentation/bloc/transfer_bloc.dart';
+import '../presentation/bloc/auth/auth_bloc.dart';
+import '../presentation/bloc/history/history_bloc.dart';
+import '../presentation/bloc/profile/profile_bloc.dart';
+import '../presentation/bloc/transfer/transfer_bloc.dart';
 import '../transfer_engine/chunking/chunk_manager.dart';
 import '../transfer_engine/download/download_manager.dart';
 import '../transfer_engine/retry/retry_queue.dart';
@@ -105,6 +109,9 @@ Future<void> configureDependencies() async {
   sl.registerLazySingleton<GetCurrentUser>(
     () => GetCurrentUser(sl<AuthRepository>()),
   );
+  sl.registerLazySingleton<GetTransferHistory>(
+    () => GetTransferHistory(sl<TransferRepository>()),
+  );
   sl.registerLazySingleton<StartUploadUseCase>(
     () => StartUploadUseCase(sl<TransferRepository>()),
   );
@@ -116,6 +123,22 @@ Future<void> configureDependencies() async {
   );
 
   // Blocs
+  sl.registerFactory<AuthBloc>(
+    () => AuthBloc(
+      getCurrentUser: sl<GetCurrentUser>(),
+      createUser: sl<CreateUser>(),
+    ),
+  );
+  sl.registerFactory<HistoryBloc>(
+    () => HistoryBloc(
+      getTransferHistory: sl<GetTransferHistory>(),
+    ),
+  );
+  sl.registerFactory<ProfileBloc>(
+    () => ProfileBloc(
+      getCurrentUser: sl<GetCurrentUser>(),
+    ),
+  );
   sl.registerFactory<TransferBloc>(
     () => TransferBloc(
       startUpload: sl<StartUploadUseCase>(),

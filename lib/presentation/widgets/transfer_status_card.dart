@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../bloc/transfer_state.dart';
+import '../bloc/transfer/transfer_state.dart';
 
 class TransferStatusCard extends StatelessWidget {
   const TransferStatusCard({super.key, required this.status});

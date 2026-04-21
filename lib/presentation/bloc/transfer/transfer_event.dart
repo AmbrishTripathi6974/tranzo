@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import '../../domain/entities/transfer_task.dart';
+import '../../../domain/entities/transfer_task.dart';
 
 sealed class TransferEvent extends Equatable {
   const TransferEvent();
@@ -9,12 +9,8 @@ sealed class TransferEvent extends Equatable {
   List<Object?> get props => <Object?>[];
 }
 
-class TransferStarted extends TransferEvent {
-  const TransferStarted();
-}
-
-class UploadRequested extends TransferEvent {
-  const UploadRequested(this.task);
+class TransferUploadRequested extends TransferEvent {
+  const TransferUploadRequested(this.task);
 
   final TransferTask task;
 
@@ -22,8 +18,8 @@ class UploadRequested extends TransferEvent {
   List<Object?> get props => <Object?>[task];
 }
 
-class DownloadRequested extends TransferEvent {
-  const DownloadRequested(this.task);
+class TransferDownloadRequested extends TransferEvent {
+  const TransferDownloadRequested(this.task);
 
   final TransferTask task;
 
@@ -31,8 +27,8 @@ class DownloadRequested extends TransferEvent {
   List<Object?> get props => <Object?>[task];
 }
 
-class RetryRequested extends TransferEvent {
-  const RetryRequested(this.transferId);
+class TransferRetryRequested extends TransferEvent {
+  const TransferRetryRequested(this.transferId);
 
   final String transferId;
 
