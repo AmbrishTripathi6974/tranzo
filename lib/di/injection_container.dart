@@ -4,6 +4,7 @@ import 'package:isar_community/isar.dart';
 import '../core/constants/app_constants.dart';
 import '../core/database/isar/isar_database.dart';
 import '../core/network/network_info.dart';
+import '../core/security/sha256_hasher.dart';
 import '../core/services/auth_service.dart';
 import '../core/services/background_transfer_runtime_service.dart';
 import '../core/services/permission_service.dart';
@@ -57,6 +58,7 @@ Future<void> configureDependencies() async {
 
   // Core
   sl.registerLazySingleton<NetworkInfo>(NetworkInfoImpl.new);
+  sl.registerLazySingleton<Sha256Hasher>(() => const Sha256Hasher());
   sl.registerLazySingleton<SupabaseClientHandle>(
     SupabaseClientHandle.fromEnvironment,
   );
@@ -121,6 +123,7 @@ Future<void> configureDependencies() async {
       storageService: sl<StorageService>(),
       backgroundRuntimeService: sl<BackgroundTransferRuntimeService>(),
       networkInfo: sl<NetworkInfo>(),
+      sha256Hasher: sl<Sha256Hasher>(),
     ),
   );
 

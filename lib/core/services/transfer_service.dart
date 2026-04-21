@@ -34,7 +34,17 @@ final class TransferService {
   Future<String?> resolveRecipientIdByCode(String rawCode) async {
     final String normalized = rawCode.trim().toUpperCase();
     if (normalized.isEmpty) {
-      throw const AppException('Recipient code is required.');
+      throw const AppException(
+        'Recipient code is required.',
+        code: AppErrorCode.invalidRecipientCode,
+      );
+    }
+    final RegExp allowed = RegExp(r'^[A-Z0-9]{4,12}$');
+    if (!allowed.hasMatch(normalized)) {
+      throw const AppException(
+        'Recipient code format is invalid.',
+        code: AppErrorCode.invalidRecipientCode,
+      );
     }
     try {
       final Map<String, dynamic>? row = await _client

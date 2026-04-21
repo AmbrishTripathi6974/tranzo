@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'dart:async';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/errors/exceptions.dart';
 import '../../../domain/entities/incoming_transfer_offer.dart';
 import '../../../domain/entities/selected_transfer_file.dart';
 import '../../../domain/entities/transfer_lifecycle_signal.dart';
@@ -115,7 +116,10 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       );
     } catch (error) {
       emit(
-        state.copyWith(status: TransferStatus.error, errorMessage: '$error'),
+        state.copyWith(
+          status: TransferStatus.error,
+          errorMessage: _toDisplayError(error),
+        ),
       );
     }
   }
@@ -260,7 +264,10 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       );
     } catch (error) {
       emit(
-        state.copyWith(status: TransferStatus.error, errorMessage: '$error'),
+        state.copyWith(
+          status: TransferStatus.error,
+          errorMessage: _toDisplayError(error),
+        ),
       );
     }
   }
@@ -365,7 +372,10 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       );
     } catch (error) {
       emit(
-        state.copyWith(status: TransferStatus.error, errorMessage: '$error'),
+        state.copyWith(
+          status: TransferStatus.error,
+          errorMessage: _toDisplayError(error),
+        ),
       );
     }
   }
@@ -385,9 +395,19 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       );
     } catch (error) {
       emit(
-        state.copyWith(status: TransferStatus.error, errorMessage: '$error'),
+        state.copyWith(
+          status: TransferStatus.error,
+          errorMessage: _toDisplayError(error),
+        ),
       );
     }
+  }
+
+  String _toDisplayError(Object error) {
+    if (error is AppException) {
+      return error.message;
+    }
+    return error.toString();
   }
 
   @override

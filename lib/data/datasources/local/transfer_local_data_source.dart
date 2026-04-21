@@ -2,8 +2,10 @@ import 'package:isar_community/isar.dart';
 
 import '../../../core/database/isar/collections/file_collection.dart';
 import '../../../core/database/isar/collections/transfer_collection.dart';
+import '../../../core/database/isar/collections/transfer_progress_collection.dart';
 import '../../../domain/entities/file_status.dart';
 import '../../../domain/entities/transfer_status.dart';
+import '../../../transfer_engine/state/transfer_state_manager.dart';
 import '../../models/transfer_task_model.dart';
 
 abstract interface class TransferLocalDataSource {
@@ -29,6 +31,10 @@ abstract interface class TransferLocalDataSource {
     String transferId,
     FileStatus status,
   );
+  Future<bool> fileExistsByFileId(String fileId);
+  Future<TransferResumeState?> getTransferProgress(String transferId);
+  Future<void> upsertTransferProgress(TransferResumeState state);
+  Future<void> clearTransferProgress(String transferId);
 }
 
 class TransferLocalDataSourceImpl implements TransferLocalDataSource {
@@ -143,6 +149,57 @@ class TransferLocalDataSourceImpl implements TransferLocalDataSource {
         row.status = status;
       }
       await _isar.fileCollections.putAll(rows);
+    });
+  }
+
+  @override
+  Future<bool> fileExistsByFileId(String fileId) async {
+    final FileCollection? row = await _isar.fileCollections
+        .filter()
+        .fileIdEqualTo(fileId)
+        .findFirst();
+    return row != null;
+  }
+
+  @override
+  Future<TransferResumeState?> getTransferProgress(String transferId) async {
+    final TransferProgressCollection? row = await _isar
+        .transferProgressCollections
+        .getByTransferId(transferId);
+    if (row == null) {
+      return null;
+    }
+    return TransferResumeState(
+      transferId: row.transferId,
+      fileName: row.fileName,
+      totalBytes: row.totalBytes,
+      direction: TransferSessionDirection.values[row.direction],
+      completedChunkIndexes: row.completedChunkIndexes.toSet(),
+      updatedAt: row.updatedAt,
+    );
+  }
+
+  @override
+  Future<void> upsertTransferProgress(TransferResumeState state) async {
+    final List<int> completed = state.completedChunkIndexes.toList(
+      growable: false,
+    )..sort();
+    await _isar.writeTxn(() async {
+      final TransferProgressCollection row = TransferProgressCollection()
+        ..transferId = state.transferId
+        ..fileName = state.fileName
+        ..totalBytes = state.totalBytes
+        ..direction = state.direction.index
+        ..completedChunkIndexes = completed
+        ..updatedAt = DateTime.now();
+      await _isar.transferProgressCollections.putByTransferId(row);
+    });
+  }
+
+  @override
+  Future<void> clearTransferProgress(String transferId) async {
+    await _isar.writeTxn(() async {
+      await _isar.transferProgressCollections.deleteByTransferId(transferId);
     });
   }
 }
