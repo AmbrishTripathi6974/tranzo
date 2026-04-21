@@ -3,11 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:tranzo/domain/entities/file_entity.dart';
-import 'package:tranzo/domain/entities/file_status.dart';
 import 'package:tranzo/domain/entities/selected_transfer_file.dart';
 import 'package:tranzo/domain/entities/transfer_batch_progress.dart';
 import 'package:tranzo/domain/entities/transfer_entity.dart';
-import 'package:tranzo/domain/entities/transfer_status.dart' as domain;
 import 'package:tranzo/domain/entities/transfer_task.dart';
 import 'package:tranzo/domain/entities/user_entity.dart';
 import 'package:tranzo/domain/repositories/transfer_repository.dart';
