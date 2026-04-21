@@ -39,69 +39,119 @@ class _UploadFormState extends State<_UploadForm> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<TransferBloc, TransferState>(
-      builder: (context, transferState) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            TextField(
-              controller: widget.recipientController,
-              decoration: const InputDecoration(
-                labelText: 'Recipient code',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              children: <Widget>[
-                FilledButton.tonal(
-                  onPressed: _pickFiles,
-                  child: const Text('Select files'),
+    return BlocListener<TransferBloc, TransferState>(
+      listenWhen: (previous, current) =>
+          previous.pendingUploadConfirmation !=
+              current.pendingUploadConfirmation ||
+          previous.uiWarningMessage != current.uiWarningMessage,
+      listener: (BuildContext context, TransferState state) async {
+        if (state.uiWarningMessage != null) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(state.uiWarningMessage!)));
+          context.read<TransferBloc>().add(const TransferUiEffectConsumed());
+          return;
+        }
+
+        final PendingUploadConfirmation? pending =
+            state.pendingUploadConfirmation;
+        if (pending == null) {
+          return;
+        }
+        final bool? confirmed = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+              title: const Text('Mobile Data Warning'),
+              content: const Text('This file may use mobile data. Continue?'),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('No'),
                 ),
                 FilledButton(
-                  onPressed: _selectedFiles.isEmpty
-                      ? null
-                      : () => _startUpload(context),
-                  child: const Text('Start upload'),
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Yes'),
                 ),
               ],
-            ),
-            if (transferState.errorMessage != null) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                transferState.errorMessage!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-            const SizedBox(height: 12),
-            Text('Selected files (${_selectedFiles.length})'),
-            const SizedBox(height: 8),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _selectedFiles.length,
-                itemBuilder: (BuildContext context, int index) {
-                  final SelectedTransferFile file = _selectedFiles[index];
-                  final progress = transferState.batchProgressByFileId[file.id];
-                  return ListTile(
-                    title: Text(file.fileName),
-                    subtitle: Text('${file.sizeBytes} bytes'),
-                    trailing: SizedBox(
-                      width: 110,
-                      child: Text(
-                        progress == null
-                            ? 'Pending'
-                            : '${(progress.progress * 100).toStringAsFixed(0)}%',
-                        textAlign: TextAlign.end,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
+            );
+          },
+        );
+        context.read<TransferBloc>().add(
+          confirmed == true
+              ? const TransferBatchUploadConfirmed()
+              : const TransferBatchUploadCancelled(),
         );
       },
+      child: BlocBuilder<TransferBloc, TransferState>(
+        builder: (context, transferState) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              TextField(
+                controller: widget.recipientController,
+                decoration: const InputDecoration(
+                  labelText: 'Recipient code',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: <Widget>[
+                  FilledButton.tonal(
+                    onPressed: _pickFiles,
+                    child: const Text('Select files'),
+                  ),
+                  FilledButton(
+                    onPressed: _selectedFiles.isEmpty
+                        ? null
+                        : () => _startUpload(context),
+                    child: const Text('Start upload'),
+                  ),
+                ],
+              ),
+              if (transferState.errorMessage != null) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(
+                  transferState.errorMessage!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              if (transferState.showInAppProgress) ...<Widget>[
+                const SizedBox(height: 8),
+                LinearProgressIndicator(value: transferState.progress),
+              ],
+              const SizedBox(height: 12),
+              Text('Selected files (${_selectedFiles.length})'),
+              const SizedBox(height: 8),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _selectedFiles.length,
+                  itemBuilder: (BuildContext context, int index) {
+                    final SelectedTransferFile file = _selectedFiles[index];
+                    final progress =
+                        transferState.batchProgressByFileId[file.id];
+                    return ListTile(
+                      title: Text(file.fileName),
+                      subtitle: Text('${file.sizeBytes} bytes'),
+                      trailing: SizedBox(
+                        width: 110,
+                        child: Text(
+                          progress == null
+                              ? 'Pending'
+                              : '${(progress.progress * 100).toStringAsFixed(0)}%',
+                          textAlign: TextAlign.end,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 

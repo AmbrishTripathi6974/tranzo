@@ -5,6 +5,7 @@ import '../core/constants/app_constants.dart';
 import '../core/database/isar/isar_database.dart';
 import '../core/network/network_info.dart';
 import '../core/services/auth_service.dart';
+import '../core/services/permission_service.dart';
 import '../core/services/realtime_service.dart';
 import '../core/services/storage_service.dart';
 import '../core/services/supabase_client.dart';
@@ -20,7 +21,9 @@ import '../domain/usecases/get_current_user_usecase.dart';
 import '../domain/usecases/get_user_interactions_usecase.dart';
 import '../domain/usecases/get_user_profile_usecase.dart';
 import '../domain/usecases/get_transfer_history_usecase.dart';
+import '../domain/usecases/check_transfer_permissions_usecase.dart';
 import '../domain/usecases/check_storage_availability_usecase.dart';
+import '../domain/usecases/evaluate_upload_policy_usecase.dart';
 import '../domain/usecases/retry_transfer_usecase.dart';
 import '../domain/usecases/send_files_usecase.dart';
 import '../domain/usecases/start_download_usecase.dart';
@@ -66,6 +69,7 @@ Future<void> configureDependencies() async {
     () => RealtimeService(sl<SupabaseClientHandle>().client),
   );
   sl.registerLazySingleton<StorageService>(StorageServiceImpl.new);
+  sl.registerLazySingleton<PermissionService>(PermissionServiceImpl.new);
 
   // Transfer data sources
   sl.registerLazySingleton<TransferRemoteDataSource>(
@@ -131,6 +135,12 @@ Future<void> configureDependencies() async {
   sl.registerLazySingleton<CheckStorageAvailability>(
     () => CheckStorageAvailability(sl<TransferRepository>()),
   );
+  sl.registerLazySingleton<EvaluateUploadPolicyUseCase>(
+    () => EvaluateUploadPolicyUseCase(sl<NetworkInfo>()),
+  );
+  sl.registerLazySingleton<CheckTransferPermissionsUseCase>(
+    () => CheckTransferPermissionsUseCase(sl<PermissionService>()),
+  );
   sl.registerLazySingleton<StartUploadUseCase>(
     () => StartUploadUseCase(sl<TransferRepository>()),
   );
@@ -167,6 +177,8 @@ Future<void> configureDependencies() async {
       retryTransfer: sl<RetryTransferUseCase>(),
       sendFiles: sl<SendFiles>(),
       checkStorageAvailability: sl<CheckStorageAvailability>(),
+      evaluateUploadPolicy: sl<EvaluateUploadPolicyUseCase>(),
+      checkTransferPermissions: sl<CheckTransferPermissionsUseCase>(),
     ),
   );
 }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:tranzo/core/network/network_info.dart';
+import 'package:tranzo/core/services/permission_service.dart';
 import 'package:tranzo/domain/entities/file_entity.dart';
 import 'package:tranzo/domain/entities/incoming_transfer_offer.dart';
 import 'package:tranzo/domain/entities/profile_interaction_entity.dart';
@@ -15,7 +17,9 @@ import 'package:tranzo/domain/usecases/retry_transfer_usecase.dart';
 import 'package:tranzo/domain/usecases/send_files_usecase.dart';
 import 'package:tranzo/domain/usecases/start_download_usecase.dart';
 import 'package:tranzo/domain/usecases/start_upload_usecase.dart';
+import 'package:tranzo/domain/usecases/check_transfer_permissions_usecase.dart';
 import 'package:tranzo/domain/usecases/check_storage_availability_usecase.dart';
+import 'package:tranzo/domain/usecases/evaluate_upload_policy_usecase.dart';
 import 'package:tranzo/presentation/bloc/transfer/transfer_bloc.dart';
 import 'package:tranzo/presentation/pages/transfer_home_page.dart';
 
@@ -28,6 +32,10 @@ void main() {
       retryTransfer: RetryTransferUseCase(repository),
       sendFiles: SendFiles(repository),
       checkStorageAvailability: CheckStorageAvailability(repository),
+      evaluateUploadPolicy: EvaluateUploadPolicyUseCase(_FakeNetworkInfo()),
+      checkTransferPermissions: CheckTransferPermissionsUseCase(
+        _FakePermissionService(),
+      ),
     );
 
     await tester.pumpWidget(
@@ -47,6 +55,7 @@ class _FakeTransferRepository implements TransferRepository {
   @override
   Future<void> acceptIncomingTransfer({
     required IncomingTransferOffer transfer,
+    bool persistPermanently = true,
   }) async {}
 
   @override
@@ -103,4 +112,23 @@ class _FakeTransferRepository implements TransferRepository {
 
   @override
   Future<void> startUpload(TransferTask task) async {}
+}
+
+class _FakeNetworkInfo implements NetworkInfo {
+  @override
+  Future<NetworkConnectionType> get connectionType async =>
+      NetworkConnectionType.wifi;
+
+  @override
+  Future<bool> get isConnected async => true;
+}
+
+class _FakePermissionService implements PermissionService {
+  @override
+  Future<TransferPermissionSnapshot> checkTransferPermissions() async {
+    return const TransferPermissionSnapshot(
+      storage: PermissionState.granted,
+      notifications: PermissionState.granted,
+    );
+  }
 }

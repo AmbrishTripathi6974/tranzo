@@ -53,6 +53,18 @@ class TransferBatchUploadRequested extends TransferEvent {
   List<Object?> get props => <Object?>[senderId, recipientCode, files];
 }
 
+class TransferBatchUploadConfirmed extends TransferEvent {
+  const TransferBatchUploadConfirmed();
+}
+
+class TransferBatchUploadCancelled extends TransferEvent {
+  const TransferBatchUploadCancelled();
+}
+
+class TransferUiEffectConsumed extends TransferEvent {
+  const TransferUiEffectConsumed();
+}
+
 class IncomingTransferListeningRequested extends TransferEvent {
   const IncomingTransferListeningRequested(this.receiverId);
 

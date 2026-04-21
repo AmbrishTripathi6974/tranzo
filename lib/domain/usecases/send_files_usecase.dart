@@ -39,8 +39,14 @@ class SendFiles {
     return _repository.listenIncomingTransfers(receiverId: receiverId);
   }
 
-  Future<void> acceptIncoming({required IncomingTransferOffer transfer}) {
-    return _repository.acceptIncomingTransfer(transfer: transfer);
+  Future<void> acceptIncoming({
+    required IncomingTransferOffer transfer,
+    bool persistPermanently = true,
+  }) {
+    return _repository.acceptIncomingTransfer(
+      transfer: transfer,
+      persistPermanently: persistPermanently,
+    );
   }
 
   Future<void> rejectIncoming({required String transferId}) {

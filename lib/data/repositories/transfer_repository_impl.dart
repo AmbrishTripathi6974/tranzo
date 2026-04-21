@@ -226,6 +226,7 @@ class TransferRepositoryImpl implements TransferRepository {
   @override
   Future<void> acceptIncomingTransfer({
     required IncomingTransferOffer transfer,
+    bool persistPermanently = true,
   }) async {
     final bool hasSpace = await hasAvailableStorage(transfer.fileSize);
     if (!hasSpace) {
@@ -328,7 +329,9 @@ class TransferRepositoryImpl implements TransferRepository {
       );
     }
 
-    final Directory appDir = await getApplicationDocumentsDirectory();
+    final Directory appDir = persistPermanently
+        ? await getApplicationDocumentsDirectory()
+        : await getTemporaryDirectory();
     final File target = File(
       '${appDir.path}${Platform.pathSeparator}${transfer.fileName}',
     );

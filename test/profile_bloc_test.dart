@@ -72,6 +72,7 @@ class _FakeTransferRepository implements TransferRepository {
   @override
   Future<void> acceptIncomingTransfer({
     required IncomingTransferOffer transfer,
+    bool persistPermanently = true,
   }) async {}
 
   @override
