@@ -5,6 +5,7 @@ import '../core/constants/app_constants.dart';
 import '../core/database/isar/isar_database.dart';
 import '../core/network/network_info.dart';
 import '../core/services/auth_service.dart';
+import '../core/services/background_transfer_runtime_service.dart';
 import '../core/services/permission_service.dart';
 import '../core/services/realtime_service.dart';
 import '../core/services/storage_service.dart';
@@ -70,6 +71,9 @@ Future<void> configureDependencies() async {
   );
   sl.registerLazySingleton<StorageService>(StorageServiceImpl.new);
   sl.registerLazySingleton<PermissionService>(PermissionServiceImpl.new);
+  sl.registerLazySingleton<BackgroundTransferRuntimeService>(
+    AndroidBackgroundTransferRuntimeService.new,
+  );
 
   // Transfer data sources
   sl.registerLazySingleton<TransferRemoteDataSource>(
@@ -115,6 +119,7 @@ Future<void> configureDependencies() async {
       downloadManager: sl<DownloadManager>(),
       retryQueue: sl<RetryQueue>(),
       storageService: sl<StorageService>(),
+      backgroundRuntimeService: sl<BackgroundTransferRuntimeService>(),
     ),
   );
 

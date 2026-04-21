@@ -18,6 +18,7 @@ import '../../core/errors/exceptions.dart';
 import '../../core/services/realtime_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/services/transfer_service.dart';
+import '../../core/services/background_transfer_runtime_service.dart';
 import 'package:isar_community/isar.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../transfer_engine/download/download_manager.dart';
@@ -40,6 +41,7 @@ class TransferRepositoryImpl implements TransferRepository {
     required DownloadManager downloadManager,
     required RetryQueue retryQueue,
     required StorageService storageService,
+    required BackgroundTransferRuntimeService backgroundRuntimeService,
   }) : _remoteDataSource = remoteDataSource,
        _localDataSource = localDataSource,
        _transferService = transferService,
@@ -48,7 +50,8 @@ class TransferRepositoryImpl implements TransferRepository {
        _uploadManager = uploadManager,
        _downloadManager = downloadManager,
        _retryQueue = retryQueue,
-       _storageService = storageService;
+       _storageService = storageService,
+       _backgroundRuntimeService = backgroundRuntimeService;
 
   final TransferRemoteDataSource _remoteDataSource;
   final TransferLocalDataSource _localDataSource;
@@ -59,6 +62,7 @@ class TransferRepositoryImpl implements TransferRepository {
   final DownloadManager _downloadManager;
   final RetryQueue _retryQueue;
   final StorageService _storageService;
+  final BackgroundTransferRuntimeService _backgroundRuntimeService;
 
   @override
   Future<void> startUpload(TransferTask task) async {
@@ -75,14 +79,10 @@ class TransferRepositoryImpl implements TransferRepository {
 
   @override
   Future<void> retryTransfer(String transferId) async {
-    // Intentionally kept as wiring-only scaffold.
-    final Object _ = (
-      _uploadManager,
-      _downloadManager,
-      _retryQueue,
-      transferId,
+    await _backgroundRuntimeService.scheduleRetry(
+      transferId: transferId,
+      userInitiated: true,
     );
-    throw UnimplementedError('Retry orchestration is not implemented yet.');
   }
 
   @override
@@ -228,14 +228,134 @@ class TransferRepositoryImpl implements TransferRepository {
     required IncomingTransferOffer transfer,
     bool persistPermanently = true,
   }) async {
-    final bool hasSpace = await hasAvailableStorage(transfer.fileSize);
-    if (!hasSpace) {
-      throw const AppException(
-        'Not enough storage space to receive this file.',
-      );
-    }
+    await _backgroundRuntimeService.startActiveTransfer(
+      transferId: transfer.transferId,
+      fileName: transfer.fileName,
+      progressPercent: 0,
+    );
+    try {
+      final bool hasSpace = await hasAvailableStorage(transfer.fileSize);
+      if (!hasSpace) {
+        throw const AppException(
+          'Not enough storage space to receive this file.',
+        );
+      }
 
-    if (await _localDataSource.fileHashExists(transfer.fileHash)) {
+      if (await _localDataSource.fileHashExists(transfer.fileHash)) {
+        await _localDataSource.updateTransferStatus(
+          transfer.transferId,
+          TransferStatus.completed,
+        );
+        await _localDataSource.updateFileStatusByTransferId(
+          transfer.transferId,
+          FileStatus.completed,
+        );
+        await _transferService.updateTransferStatus(
+          transferId: transfer.transferId,
+          status: TransferStatus.completed.name,
+        );
+        return;
+      }
+
+      await _localDataSource.updateTransferStatus(
+        transfer.transferId,
+        TransferStatus.downloading,
+      );
+      await _localDataSource.updateFileStatusByTransferId(
+        transfer.transferId,
+        FileStatus.uploading,
+      );
+      await _transferService.updateTransferStatus(
+        transferId: transfer.transferId,
+        status: TransferStatus.downloading.name,
+      );
+
+      final TransferTask task = TransferTask(
+        id: transfer.transferId,
+        fileName: transfer.fileName,
+        totalBytes: transfer.fileSize,
+      );
+      final List<ChunkDescriptor> chunks = _downloadManager.chunkPlanFor(task);
+      _downloadManager.registerSession(
+        TransferResumeState.fromTask(
+          task,
+          direction: TransferSessionDirection.download,
+        ),
+      );
+
+      final List<int> assembled = <int>[];
+      try {
+        for (final ChunkDescriptor chunk in chunks) {
+          int attempt = 0;
+          late List<int> bytes;
+          while (true) {
+            try {
+              bytes = await _remoteDataSource.downloadChunk(
+                sessionId: transfer.transferId,
+                fileId: transfer.fileId,
+                chunkIndex: chunk.index,
+              );
+              break;
+            } catch (_) {
+              if (!_retryQueue.canRetryAgain(attempt)) {
+                rethrow;
+              }
+              _retryQueue.schedule(
+                id: transfer.transferId,
+                initiator: RetryInitiator.auto,
+                attempt: attempt,
+              );
+              final Duration delay = _retryQueue.backoffAfterAttempt(attempt);
+              attempt += 1;
+              await Future<void>.delayed(delay);
+            }
+          }
+          assembled.addAll(bytes);
+          _downloadManager.acknowledgeChunkComplete(
+            transfer.transferId,
+            chunk.index,
+          );
+          await _backgroundRuntimeService.updateActiveTransfer(
+            transferId: transfer.transferId,
+            fileName: transfer.fileName,
+            progressPercent: _progressPercent(chunk.index + 1, chunks.length),
+          );
+        }
+      } catch (_) {
+        await _backgroundRuntimeService.scheduleRetry(
+          transferId: transfer.transferId,
+          userInitiated: false,
+        );
+        rethrow;
+      }
+
+      final String digest = sha256.convert(assembled).toString();
+      if (digest != transfer.fileHash) {
+        await _localDataSource.updateTransferStatus(
+          transfer.transferId,
+          TransferStatus.failed,
+        );
+        await _localDataSource.updateFileStatusByTransferId(
+          transfer.transferId,
+          FileStatus.corrupted,
+        );
+        await _transferService.updateTransferStatus(
+          transferId: transfer.transferId,
+          status: TransferStatus.failed.name,
+        );
+        throw const AppException(
+          'Received file is corrupted (SHA-256 mismatch).',
+        );
+      }
+
+      final Directory appDir = persistPermanently
+          ? await getApplicationDocumentsDirectory()
+          : await getTemporaryDirectory();
+      final File target = File(
+        '${appDir.path}${Platform.pathSeparator}${transfer.fileName}',
+      );
+      await target.writeAsBytes(assembled, flush: true);
+
       await _localDataSource.updateTransferStatus(
         transfer.transferId,
         TransferStatus.completed,
@@ -248,108 +368,10 @@ class TransferRepositoryImpl implements TransferRepository {
         transferId: transfer.transferId,
         status: TransferStatus.completed.name,
       );
-      return;
+      await _downloadManager.finalizeSession(transfer.transferId);
+    } finally {
+      await _backgroundRuntimeService.stopActiveTransfer();
     }
-
-    await _localDataSource.updateTransferStatus(
-      transfer.transferId,
-      TransferStatus.downloading,
-    );
-    await _localDataSource.updateFileStatusByTransferId(
-      transfer.transferId,
-      FileStatus.uploading,
-    );
-    await _transferService.updateTransferStatus(
-      transferId: transfer.transferId,
-      status: TransferStatus.downloading.name,
-    );
-
-    final TransferTask task = TransferTask(
-      id: transfer.transferId,
-      fileName: transfer.fileName,
-      totalBytes: transfer.fileSize,
-    );
-    final List<ChunkDescriptor> chunks = _downloadManager.chunkPlanFor(task);
-    _downloadManager.registerSession(
-      TransferResumeState.fromTask(
-        task,
-        direction: TransferSessionDirection.download,
-      ),
-    );
-
-    final List<int> assembled = <int>[];
-    for (final ChunkDescriptor chunk in chunks) {
-      int attempt = 0;
-      late List<int> bytes;
-      while (true) {
-        try {
-          bytes = await _remoteDataSource.downloadChunk(
-            sessionId: transfer.transferId,
-            fileId: transfer.fileId,
-            chunkIndex: chunk.index,
-          );
-          break;
-        } catch (_) {
-          if (!_retryQueue.canRetryAgain(attempt)) {
-            rethrow;
-          }
-          _retryQueue.schedule(
-            id: transfer.transferId,
-            initiator: RetryInitiator.auto,
-            attempt: attempt,
-          );
-          final Duration delay = _retryQueue.backoffAfterAttempt(attempt);
-          attempt += 1;
-          await Future<void>.delayed(delay);
-        }
-      }
-      assembled.addAll(bytes);
-      _downloadManager.acknowledgeChunkComplete(
-        transfer.transferId,
-        chunk.index,
-      );
-    }
-
-    final String digest = sha256.convert(assembled).toString();
-    if (digest != transfer.fileHash) {
-      await _localDataSource.updateTransferStatus(
-        transfer.transferId,
-        TransferStatus.failed,
-      );
-      await _localDataSource.updateFileStatusByTransferId(
-        transfer.transferId,
-        FileStatus.corrupted,
-      );
-      await _transferService.updateTransferStatus(
-        transferId: transfer.transferId,
-        status: TransferStatus.failed.name,
-      );
-      throw const AppException(
-        'Received file is corrupted (SHA-256 mismatch).',
-      );
-    }
-
-    final Directory appDir = persistPermanently
-        ? await getApplicationDocumentsDirectory()
-        : await getTemporaryDirectory();
-    final File target = File(
-      '${appDir.path}${Platform.pathSeparator}${transfer.fileName}',
-    );
-    await target.writeAsBytes(assembled, flush: true);
-
-    await _localDataSource.updateTransferStatus(
-      transfer.transferId,
-      TransferStatus.completed,
-    );
-    await _localDataSource.updateFileStatusByTransferId(
-      transfer.transferId,
-      FileStatus.completed,
-    );
-    await _transferService.updateTransferStatus(
-      transferId: transfer.transferId,
-      status: TransferStatus.completed.name,
-    );
-    await _downloadManager.finalizeSession(transfer.transferId);
   }
 
   @override
@@ -476,70 +498,49 @@ class TransferRepositoryImpl implements TransferRepository {
 
     yield TransferBatchProgress(sessionId: sessionId, files: progress);
 
-    for (final SelectedTransferFile file in sortedFiles) {
-      final TransferSessionRecord session = await _transferService
-          .createTransferSession(
-            TransferSessionPayload(
-              transferId: sessionId,
-              senderId: senderId,
-              receiverId: receiverId,
-              fileName: file.fileName,
-              fileSize: file.sizeBytes,
-              fileHash: '${file.fileName}_${file.sizeBytes}',
-              status: TransferStatus.uploading.name,
-              storagePath: '$sessionId/${file.id}',
-              createdAt: DateTime.now(),
-            ),
-          );
-      final TransferTask task = TransferTask(
-        id: file.id,
-        fileName: file.fileName,
-        totalBytes: file.sizeBytes,
-        localPath: file.localPath,
-      );
-      final List<ChunkDescriptor> chunks = _uploadManager.chunkPlanFor(task);
-      _uploadManager.registerSession(
-        TransferResumeState.fromTask(
-          task,
-          direction: TransferSessionDirection.upload,
-        ),
-      );
-      final File source = File(file.localPath);
+    await _backgroundRuntimeService.startActiveTransfer(
+      transferId: sessionId,
+      fileName: sortedFiles.first.fileName,
+      progressPercent: 0,
+    );
 
-      _replaceProgress(
-        progress,
-        TransferFileProgress(
-          fileId: file.id,
+    try {
+      for (final SelectedTransferFile file in sortedFiles) {
+        final TransferSessionRecord session = await _transferService
+            .createTransferSession(
+              TransferSessionPayload(
+                transferId: sessionId,
+                senderId: senderId,
+                receiverId: receiverId,
+                fileName: file.fileName,
+                fileSize: file.sizeBytes,
+                fileHash: '${file.fileName}_${file.sizeBytes}',
+                status: TransferStatus.uploading.name,
+                storagePath: '$sessionId/${file.id}',
+                createdAt: DateTime.now(),
+              ),
+            );
+        final TransferTask task = TransferTask(
+          id: file.id,
           fileName: file.fileName,
-          progress: 0,
-          status: TransferFileProgressStatus.uploading,
-        ),
-      );
-      yield TransferBatchProgress(
-        sessionId: sessionId,
-        files: List<TransferFileProgress>.from(progress),
-      );
-
-      for (final ChunkDescriptor chunk in chunks) {
-        final Stream<List<int>> bytes = source.openRead(
-          chunk.startByte,
-          chunk.endByteExclusive,
+          totalBytes: file.sizeBytes,
+          localPath: file.localPath,
         );
-        await _remoteDataSource.uploadChunk(
-          sessionId: session.transferId,
-          fileId: file.id,
-          chunkIndex: chunk.index,
-          byteStream: bytes,
+        final List<ChunkDescriptor> chunks = _uploadManager.chunkPlanFor(task);
+        _uploadManager.registerSession(
+          TransferResumeState.fromTask(
+            task,
+            direction: TransferSessionDirection.upload,
+          ),
         );
-        _uploadManager.acknowledgeChunkComplete(file.id, chunk.index);
+        final File source = File(file.localPath);
 
-        final double fileProgress = (chunk.index + 1) / chunks.length;
         _replaceProgress(
           progress,
           TransferFileProgress(
             fileId: file.id,
             fileName: file.fileName,
-            progress: fileProgress,
+            progress: 0,
             status: TransferFileProgressStatus.uploading,
           ),
         );
@@ -547,22 +548,72 @@ class TransferRepositoryImpl implements TransferRepository {
           sessionId: sessionId,
           files: List<TransferFileProgress>.from(progress),
         );
-      }
 
-      _replaceProgress(
-        progress,
-        TransferFileProgress(
-          fileId: file.id,
-          fileName: file.fileName,
-          progress: 1,
-          status: TransferFileProgressStatus.completed,
-        ),
+        for (final ChunkDescriptor chunk in chunks) {
+          final Stream<List<int>> bytes = source.openRead(
+            chunk.startByte,
+            chunk.endByteExclusive,
+          );
+          await _remoteDataSource.uploadChunk(
+            sessionId: session.transferId,
+            fileId: file.id,
+            chunkIndex: chunk.index,
+            byteStream: bytes,
+          );
+          _uploadManager.acknowledgeChunkComplete(file.id, chunk.index);
+
+          final double fileProgress = (chunk.index + 1) / chunks.length;
+          _replaceProgress(
+            progress,
+            TransferFileProgress(
+              fileId: file.id,
+              fileName: file.fileName,
+              progress: fileProgress,
+              status: TransferFileProgressStatus.uploading,
+            ),
+          );
+          await _backgroundRuntimeService.updateActiveTransfer(
+            transferId: sessionId,
+            fileName: file.fileName,
+            progressPercent: _progressPercent(chunk.index + 1, chunks.length),
+          );
+          yield TransferBatchProgress(
+            sessionId: sessionId,
+            files: List<TransferFileProgress>.from(progress),
+          );
+        }
+
+        _replaceProgress(
+          progress,
+          TransferFileProgress(
+            fileId: file.id,
+            fileName: file.fileName,
+            progress: 1,
+            status: TransferFileProgressStatus.completed,
+          ),
+        );
+        yield TransferBatchProgress(
+          sessionId: sessionId,
+          files: List<TransferFileProgress>.from(progress),
+        );
+      }
+    } catch (_) {
+      await _backgroundRuntimeService.scheduleRetry(
+        transferId: sessionId,
+        userInitiated: false,
       );
-      yield TransferBatchProgress(
-        sessionId: sessionId,
-        files: List<TransferFileProgress>.from(progress),
-      );
+      rethrow;
+    } finally {
+      await _backgroundRuntimeService.stopActiveTransfer();
     }
+  }
+
+  int _progressPercent(int completed, int total) {
+    if (total <= 0) {
+      return 0;
+    }
+    final double normalized = completed / total;
+    return (normalized * 100).clamp(0, 100).round();
   }
 
   Future<void> _upsertLocalTransfer({

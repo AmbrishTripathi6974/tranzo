@@ -77,6 +77,9 @@ class _UploadFormState extends State<_UploadForm> {
             );
           },
         );
+        if (!context.mounted) {
+          return;
+        }
         context.read<TransferBloc>().add(
           confirmed == true
               ? const TransferBatchUploadConfirmed()
