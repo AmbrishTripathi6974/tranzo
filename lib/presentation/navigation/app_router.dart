@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/profile/profile_bloc.dart';
-import '../bloc/profile/profile_state.dart';
 import '../pages/transfer_home_page.dart';
 import '../pages/upload_page.dart';
 import '../screens/history/history_screen.dart';
+import '../screens/profile/profile_screen.dart';
 import 'bottom_nav.dart';
 
 abstract final class AppRouter {
@@ -27,10 +25,8 @@ abstract final class AppRouter {
           ),
           GoRoute(
             path: '/transfer',
-            pageBuilder: (context, state) => _buildTransitionPage(
-              state: state,
-              child: const UploadPage(),
-            ),
+            pageBuilder: (context, state) =>
+                _buildTransitionPage(state: state, child: const UploadPage()),
           ),
           GoRoute(
             path: '/history',
@@ -43,7 +39,7 @@ abstract final class AppRouter {
             path: '/profile',
             pageBuilder: (context, state) => _buildTransitionPage(
               state: state,
-              child: const _ProfileScreen(),
+              child: const ProfileScreen(),
             ),
           ),
         ],
@@ -72,25 +68,6 @@ abstract final class AppRouter {
           ),
         );
       },
-    );
-  }
-}
-
-class _ProfileScreen extends StatelessWidget {
-  const _ProfileScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
-      body: Center(
-        child: BlocBuilder<ProfileBloc, ProfileState>(
-          builder: (context, state) {
-            final String username = state.user?.username ?? 'Unknown';
-            return Text('Username: $username');
-          },
-        ),
-      ),
     );
   }
 }

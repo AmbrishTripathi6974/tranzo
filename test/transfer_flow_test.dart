@@ -3,6 +3,7 @@ import 'package:tranzo/core/constants/app_constants.dart';
 import 'package:tranzo/core/errors/exceptions.dart';
 import 'package:tranzo/domain/entities/file_entity.dart';
 import 'package:tranzo/domain/entities/incoming_transfer_offer.dart';
+import 'package:tranzo/domain/entities/profile_interaction_entity.dart';
 import 'package:tranzo/domain/entities/selected_transfer_file.dart';
 import 'package:tranzo/domain/entities/transfer_batch_progress.dart';
 import 'package:tranzo/domain/entities/transfer_entity.dart';
@@ -13,6 +14,7 @@ import 'package:tranzo/domain/usecases/retry_transfer_usecase.dart';
 import 'package:tranzo/domain/usecases/send_files_usecase.dart';
 import 'package:tranzo/domain/usecases/start_download_usecase.dart';
 import 'package:tranzo/domain/usecases/start_upload_usecase.dart';
+import 'package:tranzo/domain/usecases/check_storage_availability_usecase.dart';
 import 'package:tranzo/presentation/bloc/transfer/transfer_bloc.dart';
 import 'package:tranzo/presentation/bloc/transfer/transfer_event.dart';
 import 'package:tranzo/presentation/bloc/transfer/transfer_state.dart';
@@ -40,6 +42,7 @@ void main() {
         startDownload: StartDownloadUseCase(repository),
         retryTransfer: RetryTransferUseCase(repository),
         sendFiles: SendFiles(repository),
+        checkStorageAvailability: CheckStorageAvailability(repository),
       );
       final List<TransferState> states = <TransferState>[];
       final sub = bloc.stream.listen(states.add);
@@ -74,6 +77,7 @@ void main() {
         startDownload: StartDownloadUseCase(repository),
         retryTransfer: RetryTransferUseCase(repository),
         sendFiles: SendFiles(repository),
+        checkStorageAvailability: CheckStorageAvailability(repository),
       );
 
       bloc.add(
@@ -97,18 +101,70 @@ void main() {
 
       await bloc.close();
     });
+
+    test('blocks incoming accept when storage is insufficient', () async {
+      final _FakeTransferRepository repository = _FakeTransferRepository(
+        throwOnAccept: true,
+      );
+      final TransferBloc bloc = TransferBloc(
+        startUpload: StartUploadUseCase(repository),
+        startDownload: StartDownloadUseCase(repository),
+        retryTransfer: RetryTransferUseCase(repository),
+        sendFiles: SendFiles(repository),
+        checkStorageAvailability: CheckStorageAvailability(repository),
+      );
+
+      bloc.add(
+        IncomingTransferAccepted(
+          IncomingTransferOffer(
+            transferId: 't-1',
+            senderId: 'u-1',
+            receiverId: 'u-2',
+            fileId: 'f-1',
+            fileName: 'doc.pdf',
+            fileSize: 1024,
+            fileHash: 'hash',
+            storagePath: 'path',
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(bloc.state.status, TransferStatus.error);
+      expect(bloc.state.errorMessage, contains('Not enough storage'));
+      await bloc.close();
+    });
   });
 }
 
 class _FakeTransferRepository implements TransferRepository {
+  _FakeTransferRepository({this.throwOnAccept = false});
+
+  final bool throwOnAccept;
+
   @override
   Future<void> acceptIncomingTransfer({
     required IncomingTransferOffer transfer,
-  }) async {}
+  }) async {
+    if (throwOnAccept) {
+      throw const AppException(
+        'Not enough storage space to receive this file.',
+      );
+    }
+  }
 
   @override
   Future<List<TransferEntity>> getTransferHistory(String userId) async =>
       const <TransferEntity>[];
+
+  @override
+  Future<List<ProfileInteractionEntity>> getUserInteractions(
+    String userId,
+  ) async => const <ProfileInteractionEntity>[];
+
+  @override
+  Future<bool> hasAvailableStorage(int requiredBytes) async => true;
 
   @override
   Stream<IncomingTransferOffer> listenIncomingTransfers({

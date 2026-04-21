@@ -12,6 +12,7 @@ class UserCollection {
 
   String? email;
   String? displayName;
+  String? shortCode;
   String? avatarUrl;
 
   DateTime updatedAt = DateTime.now();

@@ -5,6 +5,7 @@ import '../../domain/entities/transfer_task.dart';
 import '../../domain/entities/selected_transfer_file.dart';
 import '../../domain/entities/transfer_batch_progress.dart';
 import '../../domain/entities/incoming_transfer_offer.dart';
+import '../../domain/entities/profile_interaction_entity.dart';
 import '../../domain/entities/transfer_entity.dart';
 import '../../domain/entities/transfer_status.dart';
 import '../../domain/entities/file_status.dart';
@@ -15,6 +16,7 @@ import '../../core/database/isar/collections/transfer_collection.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/exceptions.dart';
 import '../../core/services/realtime_service.dart';
+import '../../core/services/storage_service.dart';
 import '../../core/services/transfer_service.dart';
 import 'package:isar_community/isar.dart';
 import 'package:path_provider/path_provider.dart';
@@ -37,6 +39,7 @@ class TransferRepositoryImpl implements TransferRepository {
     required UploadManager uploadManager,
     required DownloadManager downloadManager,
     required RetryQueue retryQueue,
+    required StorageService storageService,
   }) : _remoteDataSource = remoteDataSource,
        _localDataSource = localDataSource,
        _transferService = transferService,
@@ -44,7 +47,8 @@ class TransferRepositoryImpl implements TransferRepository {
        _isar = isar,
        _uploadManager = uploadManager,
        _downloadManager = downloadManager,
-       _retryQueue = retryQueue;
+       _retryQueue = retryQueue,
+       _storageService = storageService;
 
   final TransferRemoteDataSource _remoteDataSource;
   final TransferLocalDataSource _localDataSource;
@@ -54,6 +58,7 @@ class TransferRepositoryImpl implements TransferRepository {
   final UploadManager _uploadManager;
   final DownloadManager _downloadManager;
   final RetryQueue _retryQueue;
+  final StorageService _storageService;
 
   @override
   Future<void> startUpload(TransferTask task) async {
@@ -143,6 +148,12 @@ class TransferRepositoryImpl implements TransferRepository {
         .transferIdEqualTo(transferId)
         .findFirst();
     if (cached != null) {
+      final bool hasSpace = await hasAvailableStorage(cached.fileSize ?? 0);
+      if (!hasSpace) {
+        throw const AppException(
+          'Not enough storage space to receive this file.',
+        );
+      }
       return _mapCollectionToEntity(cached);
     }
 
@@ -216,6 +227,13 @@ class TransferRepositoryImpl implements TransferRepository {
   Future<void> acceptIncomingTransfer({
     required IncomingTransferOffer transfer,
   }) async {
+    final bool hasSpace = await hasAvailableStorage(transfer.fileSize);
+    if (!hasSpace) {
+      throw const AppException(
+        'Not enough storage space to receive this file.',
+      );
+    }
+
     if (await _localDataSource.fileHashExists(transfer.fileHash)) {
       await _localDataSource.updateTransferStatus(
         transfer.transferId,
@@ -364,6 +382,52 @@ class TransferRepositoryImpl implements TransferRepository {
         )
         .map(_mapCollectionToEntity)
         .toList(growable: false);
+  }
+
+  @override
+  Future<List<ProfileInteractionEntity>> getUserInteractions(
+    String userId,
+  ) async {
+    final List<TransferEntity> history = await getTransferHistory(userId);
+    final Map<String, ProfileInteractionEntity> interactionsByUserId =
+        <String, ProfileInteractionEntity>{};
+
+    for (final TransferEntity transfer in history) {
+      final bool isSender = transfer.senderId == userId;
+      final String counterpartId = isSender
+          ? transfer.receiverId
+          : transfer.senderId;
+      final String counterpartUsername = isSender
+          ? (transfer.receiverUsername?.trim().isNotEmpty == true
+                ? transfer.receiverUsername!
+                : 'Unknown user')
+          : (transfer.senderUsername?.trim().isNotEmpty == true
+                ? transfer.senderUsername!
+                : 'Unknown user');
+
+      final ProfileInteractionEntity? existing =
+          interactionsByUserId[counterpartId];
+      if (existing == null ||
+          transfer.createdAt.isAfter(existing.lastInteractionDate)) {
+        interactionsByUserId[counterpartId] = ProfileInteractionEntity(
+          userId: counterpartId,
+          username: counterpartUsername,
+          lastInteractionDate: transfer.createdAt,
+        );
+      }
+    }
+
+    final List<ProfileInteractionEntity> unique =
+        interactionsByUserId.values.toList(growable: false)..sort(
+          (ProfileInteractionEntity a, ProfileInteractionEntity b) =>
+              b.lastInteractionDate.compareTo(a.lastInteractionDate),
+        );
+    return unique;
+  }
+
+  @override
+  Future<bool> hasAvailableStorage(int requiredBytes) {
+    return _storageService.hasSpaceForBytes(requiredBytes);
   }
 
   @override

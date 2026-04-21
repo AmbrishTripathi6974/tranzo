@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 import '../../../domain/entities/transfer_entity.dart';
 
 enum HistoryFilterType { all, sent, received }
+
 enum HistoryStatus { initial, loading, loaded, empty, error }
 
 class HistoryState extends Equatable {

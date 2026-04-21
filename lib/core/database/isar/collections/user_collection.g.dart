@@ -28,13 +28,18 @@ const UserCollectionSchema = CollectionSchema(
       type: IsarType.string,
     ),
     r'email': PropertySchema(id: 2, name: r'email', type: IsarType.string),
-    r'supabaseUserId': PropertySchema(
+    r'shortCode': PropertySchema(
       id: 3,
+      name: r'shortCode',
+      type: IsarType.string,
+    ),
+    r'supabaseUserId': PropertySchema(
+      id: 4,
       name: r'supabaseUserId',
       type: IsarType.string,
     ),
     r'updatedAt': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'updatedAt',
       type: IsarType.dateTime,
     ),
@@ -93,6 +98,12 @@ int _userCollectionEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
+  {
+    final value = object.shortCode;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.supabaseUserId.length * 3;
   return bytesCount;
 }
@@ -106,8 +117,9 @@ void _userCollectionSerialize(
   writer.writeString(offsets[0], object.avatarUrl);
   writer.writeString(offsets[1], object.displayName);
   writer.writeString(offsets[2], object.email);
-  writer.writeString(offsets[3], object.supabaseUserId);
-  writer.writeDateTime(offsets[4], object.updatedAt);
+  writer.writeString(offsets[3], object.shortCode);
+  writer.writeString(offsets[4], object.supabaseUserId);
+  writer.writeDateTime(offsets[5], object.updatedAt);
 }
 
 UserCollection _userCollectionDeserialize(
@@ -121,8 +133,9 @@ UserCollection _userCollectionDeserialize(
   object.displayName = reader.readStringOrNull(offsets[1]);
   object.email = reader.readStringOrNull(offsets[2]);
   object.id = id;
-  object.supabaseUserId = reader.readString(offsets[3]);
-  object.updatedAt = reader.readDateTime(offsets[4]);
+  object.shortCode = reader.readStringOrNull(offsets[3]);
+  object.supabaseUserId = reader.readString(offsets[4]);
+  object.updatedAt = reader.readDateTime(offsets[5]);
   return object;
 }
 
@@ -140,8 +153,10 @@ P _userCollectionDeserializeProp<P>(
     case 2:
       return (reader.readStringOrNull(offset)) as P;
     case 3:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 4:
+      return (reader.readString(offset)) as P;
+    case 5:
       return (reader.readDateTime(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -899,6 +914,165 @@ extension UserCollectionQueryFilter
   }
 
   QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
+  shortCodeIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'shortCode'),
+      );
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
+  shortCodeIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'shortCode'),
+      );
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
+  shortCodeEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'shortCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
+  shortCodeGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'shortCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
+  shortCodeLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'shortCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
+  shortCodeBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'shortCode',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
+  shortCodeStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'shortCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
+  shortCodeEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'shortCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
+  shortCodeContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'shortCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
+  shortCodeMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'shortCode',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
+  shortCodeIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'shortCode', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
+  shortCodeIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'shortCode', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterFilterCondition>
   supabaseUserIdEqualTo(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -1142,6 +1316,19 @@ extension UserCollectionQuerySortBy
     });
   }
 
+  QueryBuilder<UserCollection, UserCollection, QAfterSortBy> sortByShortCode() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'shortCode', Sort.asc);
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterSortBy>
+  sortByShortCodeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'shortCode', Sort.desc);
+    });
+  }
+
   QueryBuilder<UserCollection, UserCollection, QAfterSortBy>
   sortBySupabaseUserId() {
     return QueryBuilder.apply(this, (query) {
@@ -1223,6 +1410,19 @@ extension UserCollectionQuerySortThenBy
     });
   }
 
+  QueryBuilder<UserCollection, UserCollection, QAfterSortBy> thenByShortCode() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'shortCode', Sort.asc);
+    });
+  }
+
+  QueryBuilder<UserCollection, UserCollection, QAfterSortBy>
+  thenByShortCodeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'shortCode', Sort.desc);
+    });
+  }
+
   QueryBuilder<UserCollection, UserCollection, QAfterSortBy>
   thenBySupabaseUserId() {
     return QueryBuilder.apply(this, (query) {
@@ -1276,6 +1476,14 @@ extension UserCollectionQueryWhereDistinct
     });
   }
 
+  QueryBuilder<UserCollection, UserCollection, QDistinct> distinctByShortCode({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'shortCode', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<UserCollection, UserCollection, QDistinct>
   distinctBySupabaseUserId({bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -1318,6 +1526,12 @@ extension UserCollectionQueryProperty
   QueryBuilder<UserCollection, String?, QQueryOperations> emailProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'email');
+    });
+  }
+
+  QueryBuilder<UserCollection, String?, QQueryOperations> shortCodeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'shortCode');
     });
   }
 

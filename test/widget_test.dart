@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:tranzo/domain/entities/file_entity.dart';
 import 'package:tranzo/domain/entities/incoming_transfer_offer.dart';
+import 'package:tranzo/domain/entities/profile_interaction_entity.dart';
 import 'package:tranzo/domain/entities/selected_transfer_file.dart';
 import 'package:tranzo/domain/entities/transfer_batch_progress.dart';
 import 'package:tranzo/domain/entities/transfer_entity.dart';
@@ -14,6 +15,7 @@ import 'package:tranzo/domain/usecases/retry_transfer_usecase.dart';
 import 'package:tranzo/domain/usecases/send_files_usecase.dart';
 import 'package:tranzo/domain/usecases/start_download_usecase.dart';
 import 'package:tranzo/domain/usecases/start_upload_usecase.dart';
+import 'package:tranzo/domain/usecases/check_storage_availability_usecase.dart';
 import 'package:tranzo/presentation/bloc/transfer/transfer_bloc.dart';
 import 'package:tranzo/presentation/pages/transfer_home_page.dart';
 
@@ -25,6 +27,7 @@ void main() {
       startDownload: StartDownloadUseCase(repository),
       retryTransfer: RetryTransferUseCase(repository),
       sendFiles: SendFiles(repository),
+      checkStorageAvailability: CheckStorageAvailability(repository),
     );
 
     await tester.pumpWidget(
@@ -49,6 +52,14 @@ class _FakeTransferRepository implements TransferRepository {
   @override
   Future<List<TransferEntity>> getTransferHistory(String userId) async =>
       const <TransferEntity>[];
+
+  @override
+  Future<List<ProfileInteractionEntity>> getUserInteractions(
+    String userId,
+  ) async => const <ProfileInteractionEntity>[];
+
+  @override
+  Future<bool> hasAvailableStorage(int requiredBytes) async => true;
 
   @override
   Stream<IncomingTransferOffer> listenIncomingTransfers({

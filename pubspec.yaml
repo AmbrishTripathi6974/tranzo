@@ -46,6 +46,7 @@ dependencies:
   path_provider: ^2.1.5
   file_picker: ^10.3.3
   crypto: ^3.0.7
+  disk_space_plus: ^0.2.6
 
 dev_dependencies:
   flutter_test:

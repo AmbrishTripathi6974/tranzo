@@ -7,6 +7,7 @@ import '../../../domain/usecases/retry_transfer_usecase.dart';
 import '../../../domain/usecases/send_files_usecase.dart';
 import '../../../domain/usecases/start_download_usecase.dart';
 import '../../../domain/usecases/start_upload_usecase.dart';
+import '../../../domain/usecases/check_storage_availability_usecase.dart';
 import '../../../domain/entities/transfer_batch_progress.dart';
 import 'transfer_event.dart';
 import 'transfer_state.dart';
@@ -17,10 +18,12 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     required StartDownloadUseCase startDownload,
     required RetryTransferUseCase retryTransfer,
     required SendFiles sendFiles,
+    required CheckStorageAvailability checkStorageAvailability,
   }) : _startUpload = startUpload,
        _startDownload = startDownload,
        _retryTransfer = retryTransfer,
        _sendFiles = sendFiles,
+       _checkStorageAvailability = checkStorageAvailability,
        super(const TransferState()) {
     on<TransferUploadRequested>(_onUploadRequested);
     on<TransferDownloadRequested>(_onDownloadRequested);
@@ -36,6 +39,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
   final StartDownloadUseCase _startDownload;
   final RetryTransferUseCase _retryTransfer;
   final SendFiles _sendFiles;
+  final CheckStorageAvailability _checkStorageAvailability;
   StreamSubscription<IncomingTransferOffer>? _incomingSubscription;
 
   Future<void> _onUploadRequested(
@@ -203,6 +207,12 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       state.copyWith(status: TransferStatus.loading, clearErrorMessage: true),
     );
     try {
+      final bool hasStorage = await _checkStorageAvailability(
+        event.transfer.fileSize,
+      );
+      if (!hasStorage) {
+        throw Exception('Not enough storage space to receive this file.');
+      }
       await _sendFiles.acceptIncoming(transfer: event.transfer);
       emit(
         state.copyWith(

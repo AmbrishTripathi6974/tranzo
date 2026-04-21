@@ -33,6 +33,7 @@ class AuthRepositoryImpl implements AuthRepository {
       final userCollection = UserCollection()
         ..supabaseUserId = userModel.id
         ..displayName = userModel.username
+        ..shortCode = userModel.shortCode
         ..updatedAt = DateTime.now();
       await _isar.userCollections.put(userCollection);
     });
@@ -51,7 +52,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
     final userModel = UserModel(
       id: cached.supabaseUserId,
-      shortCode: '',
+      shortCode: cached.shortCode ?? '',
       username: cached.displayName ?? '',
     );
     return userModel.toEntity();

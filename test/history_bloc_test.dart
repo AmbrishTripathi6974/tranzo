@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tranzo/domain/entities/file_entity.dart';
 import 'package:tranzo/domain/entities/incoming_transfer_offer.dart';
+import 'package:tranzo/domain/entities/profile_interaction_entity.dart';
 import 'package:tranzo/domain/entities/selected_transfer_file.dart';
 import 'package:tranzo/domain/entities/transfer_batch_progress.dart';
 import 'package:tranzo/domain/entities/transfer_entity.dart';
@@ -160,6 +161,14 @@ class _FakeTransferRepository implements TransferRepository {
     }
     return historyItems;
   }
+
+  @override
+  Future<List<ProfileInteractionEntity>> getUserInteractions(
+    String userId,
+  ) async => const <ProfileInteractionEntity>[];
+
+  @override
+  Future<bool> hasAvailableStorage(int requiredBytes) async => true;
 
   @override
   Stream<IncomingTransferOffer> listenIncomingTransfers({

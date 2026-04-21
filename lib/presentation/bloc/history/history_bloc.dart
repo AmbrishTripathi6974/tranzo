@@ -63,7 +63,9 @@ class HistoryBloc extends Bloc<HistoryEvent, HistoryState> {
 
     emit(
       state.copyWith(
-        status: visibleItems.isEmpty ? HistoryStatus.empty : HistoryStatus.loaded,
+        status: visibleItems.isEmpty
+            ? HistoryStatus.empty
+            : HistoryStatus.loaded,
         filterType: event.filterType,
         items: visibleItems,
       ),
@@ -75,15 +77,17 @@ class HistoryBloc extends Bloc<HistoryEvent, HistoryState> {
     required String currentUserId,
     required HistoryFilterType filterType,
   }) {
-    return allItems.where((TransferEntity item) {
-      switch (filterType) {
-        case HistoryFilterType.all:
-          return true;
-        case HistoryFilterType.sent:
-          return item.senderId == currentUserId;
-        case HistoryFilterType.received:
-          return item.receiverId == currentUserId;
-      }
-    }).toList(growable: false);
+    return allItems
+        .where((TransferEntity item) {
+          switch (filterType) {
+            case HistoryFilterType.all:
+              return true;
+            case HistoryFilterType.sent:
+              return item.senderId == currentUserId;
+            case HistoryFilterType.received:
+              return item.receiverId == currentUserId;
+          }
+        })
+        .toList(growable: false);
   }
 }

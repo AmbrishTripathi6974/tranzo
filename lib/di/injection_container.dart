@@ -6,6 +6,7 @@ import '../core/database/isar/isar_database.dart';
 import '../core/network/network_info.dart';
 import '../core/services/auth_service.dart';
 import '../core/services/realtime_service.dart';
+import '../core/services/storage_service.dart';
 import '../core/services/supabase_client.dart';
 import '../core/services/transfer_service.dart';
 import '../data/datasources/local/transfer_local_data_source.dart';
@@ -16,7 +17,10 @@ import '../domain/repositories/auth_repository.dart';
 import '../domain/repositories/transfer_repository.dart';
 import '../domain/usecases/create_user_usecase.dart';
 import '../domain/usecases/get_current_user_usecase.dart';
+import '../domain/usecases/get_user_interactions_usecase.dart';
+import '../domain/usecases/get_user_profile_usecase.dart';
 import '../domain/usecases/get_transfer_history_usecase.dart';
+import '../domain/usecases/check_storage_availability_usecase.dart';
 import '../domain/usecases/retry_transfer_usecase.dart';
 import '../domain/usecases/send_files_usecase.dart';
 import '../domain/usecases/start_download_usecase.dart';
@@ -61,6 +65,7 @@ Future<void> configureDependencies() async {
   sl.registerLazySingleton<RealtimeService>(
     () => RealtimeService(sl<SupabaseClientHandle>().client),
   );
+  sl.registerLazySingleton<StorageService>(StorageServiceImpl.new);
 
   // Transfer data sources
   sl.registerLazySingleton<TransferRemoteDataSource>(
@@ -105,6 +110,7 @@ Future<void> configureDependencies() async {
       uploadManager: sl<UploadManager>(),
       downloadManager: sl<DownloadManager>(),
       retryQueue: sl<RetryQueue>(),
+      storageService: sl<StorageService>(),
     ),
   );
 
@@ -115,6 +121,15 @@ Future<void> configureDependencies() async {
   );
   sl.registerLazySingleton<GetTransferHistoryUseCase>(
     () => GetTransferHistoryUseCase(sl<TransferRepository>()),
+  );
+  sl.registerLazySingleton<GetUserProfile>(
+    () => GetUserProfile(sl<AuthRepository>()),
+  );
+  sl.registerLazySingleton<GetUserInteractions>(
+    () => GetUserInteractions(sl<TransferRepository>()),
+  );
+  sl.registerLazySingleton<CheckStorageAvailability>(
+    () => CheckStorageAvailability(sl<TransferRepository>()),
   );
   sl.registerLazySingleton<StartUploadUseCase>(
     () => StartUploadUseCase(sl<TransferRepository>()),
@@ -140,7 +155,10 @@ Future<void> configureDependencies() async {
     () => HistoryBloc(getTransferHistory: sl<GetTransferHistoryUseCase>()),
   );
   sl.registerFactory<ProfileBloc>(
-    () => ProfileBloc(getCurrentUser: sl<GetCurrentUser>()),
+    () => ProfileBloc(
+      getUserProfile: sl<GetUserProfile>(),
+      getUserInteractions: sl<GetUserInteractions>(),
+    ),
   );
   sl.registerFactory<TransferBloc>(
     () => TransferBloc(
@@ -148,6 +166,7 @@ Future<void> configureDependencies() async {
       startDownload: sl<StartDownloadUseCase>(),
       retryTransfer: sl<RetryTransferUseCase>(),
       sendFiles: sl<SendFiles>(),
+      checkStorageAvailability: sl<CheckStorageAvailability>(),
     ),
   );
 }
