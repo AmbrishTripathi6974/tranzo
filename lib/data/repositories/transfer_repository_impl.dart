@@ -436,6 +436,42 @@ class TransferRepositoryImpl implements TransferRepository {
       );
       await _downloadManager.finalizeSession(transfer.transferId);
       await _localDataSource.clearTransferProgress(transfer.transferId);
+    } on AppException {
+      await _localDataSource.updateTransferStatus(
+        transfer.transferId,
+        TransferStatus.failed,
+      );
+      await _localDataSource.updateFileStatusByTransferId(
+        transfer.transferId,
+        FileStatus.failed,
+      );
+      await _transferService.updateTransferStatus(
+        transferId: transfer.transferId,
+        status: TransferStatus.failed.name,
+      );
+      await _backgroundRuntimeService.scheduleRetry(
+        transferId: transfer.transferId,
+        userInitiated: false,
+      );
+      rethrow;
+    } catch (error) {
+      await _localDataSource.updateTransferStatus(
+        transfer.transferId,
+        TransferStatus.failed,
+      );
+      await _localDataSource.updateFileStatusByTransferId(
+        transfer.transferId,
+        FileStatus.failed,
+      );
+      await _transferService.updateTransferStatus(
+        transferId: transfer.transferId,
+        status: TransferStatus.failed.name,
+      );
+      await _backgroundRuntimeService.scheduleRetry(
+        transferId: transfer.transferId,
+        userInitiated: false,
+      );
+      throw AppException(error.toString());
     } finally {
       await _backgroundRuntimeService.stopActiveTransfer();
     }
@@ -909,47 +945,25 @@ class TransferRepositoryImpl implements TransferRepository {
     );
     final Map<int, List<int>> chunksByIndex = <int, List<int>>{};
     for (final ChunkDescriptor chunk in pending) {
-      int attempt = 0;
-      while (true) {
-        try {
-          final List<int> bytes = await _remoteDataSource.downloadChunk(
-            sessionId: transfer.transferId,
-            fileId: transfer.fileId,
-            chunkIndex: chunk.index,
-          );
-          chunksByIndex[chunk.index] = bytes;
-          final TransferResumeState? updated = _downloadManager
-              .acknowledgeChunkComplete(transfer.transferId, chunk.index);
-          if (updated != null) {
-            await _localDataSource.upsertTransferProgress(updated);
-          }
-          await _backgroundRuntimeService.updateActiveTransfer(
-            transferId: transfer.transferId,
-            fileName: transfer.fileName,
-            progressPercent: _progressPercent(chunk.index + 1, totalChunks),
-          );
-          await _syncProgressThrottled(
-            transferId: transfer.transferId,
-            status: TransferStatus.downloading,
-          );
-          break;
-        } catch (_) {
-          if (!_retryQueue.canRetryAgain(attempt)) {
-            throw const AppException(
-              'Chunk download failed after retries.',
-              code: AppErrorCode.chunkTransferFailed,
-            );
-          }
-          _retryQueue.schedule(
-            id: transfer.transferId,
-            initiator: RetryInitiator.auto,
-            attempt: attempt,
-          );
-          final Duration delay = _retryQueue.backoffAfterAttempt(attempt);
-          attempt += 1;
-          await Future<void>.delayed(delay);
-        }
+      final List<int> bytes = await _downloadChunkWithRetries(
+        transfer: transfer,
+        chunkIndex: chunk.index,
+      );
+      chunksByIndex[chunk.index] = bytes;
+      final TransferResumeState? updated = _downloadManager
+          .acknowledgeChunkComplete(transfer.transferId, chunk.index);
+      if (updated != null) {
+        await _localDataSource.upsertTransferProgress(updated);
       }
+      await _backgroundRuntimeService.updateActiveTransfer(
+        transferId: transfer.transferId,
+        fileName: transfer.fileName,
+        progressPercent: _progressPercent(chunk.index + 1, totalChunks),
+      );
+      await _syncProgressThrottled(
+        transferId: transfer.transferId,
+        status: TransferStatus.downloading,
+      );
     }
 
     final TransferResumeState? finalState = await _localDataSource
@@ -968,14 +982,44 @@ class TransferRepositoryImpl implements TransferRepository {
       }
       assembled.addAll(
         chunksByIndex[descriptor.index] ??
-            await _remoteDataSource.downloadChunk(
-              sessionId: transfer.transferId,
-              fileId: transfer.fileId,
+            await _downloadChunkWithRetries(
+              transfer: transfer,
               chunkIndex: descriptor.index,
             ),
       );
     }
     return assembled;
+  }
+
+  Future<List<int>> _downloadChunkWithRetries({
+    required IncomingTransferOffer transfer,
+    required int chunkIndex,
+  }) async {
+    int attempt = 0;
+    while (true) {
+      try {
+        return await _remoteDataSource.downloadChunk(
+          sessionId: transfer.transferId,
+          fileId: transfer.fileId,
+          chunkIndex: chunkIndex,
+        );
+      } catch (_) {
+        if (!_retryQueue.canRetryAgain(attempt)) {
+          throw const AppException(
+            'Chunk download failed after retries.',
+            code: AppErrorCode.chunkTransferFailed,
+          );
+        }
+        _retryQueue.schedule(
+          id: transfer.transferId,
+          initiator: RetryInitiator.auto,
+          attempt: attempt,
+        );
+        final Duration delay = _retryQueue.backoffAfterAttempt(attempt);
+        attempt += 1;
+        await Future<void>.delayed(delay);
+      }
+    }
   }
 
   Future<File> _resolveUniqueTargetFile({
