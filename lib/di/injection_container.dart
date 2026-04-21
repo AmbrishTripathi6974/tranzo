@@ -120,6 +120,7 @@ Future<void> configureDependencies() async {
       retryQueue: sl<RetryQueue>(),
       storageService: sl<StorageService>(),
       backgroundRuntimeService: sl<BackgroundTransferRuntimeService>(),
+      networkInfo: sl<NetworkInfo>(),
     ),
   );
 

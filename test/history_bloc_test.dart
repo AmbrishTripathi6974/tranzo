@@ -5,6 +5,7 @@ import 'package:tranzo/domain/entities/profile_interaction_entity.dart';
 import 'package:tranzo/domain/entities/selected_transfer_file.dart';
 import 'package:tranzo/domain/entities/transfer_batch_progress.dart';
 import 'package:tranzo/domain/entities/transfer_entity.dart';
+import 'package:tranzo/domain/entities/transfer_lifecycle_signal.dart';
 import 'package:tranzo/domain/entities/transfer_status.dart';
 import 'package:tranzo/domain/entities/transfer_task.dart';
 import 'package:tranzo/domain/entities/user_entity.dart';
@@ -175,6 +176,11 @@ class _FakeTransferRepository implements TransferRepository {
   Stream<IncomingTransferOffer> listenIncomingTransfers({
     required String receiverId,
   }) => const Stream<IncomingTransferOffer>.empty();
+
+  @override
+  Stream<TransferLifecycleSignalEntity> listenTransferSignals({
+    required String userId,
+  }) => const Stream<TransferLifecycleSignalEntity>.empty();
 
   @override
   Future<TransferEntity> receiveFiles(String transferId) {

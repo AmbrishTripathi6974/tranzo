@@ -10,6 +10,7 @@ import 'package:tranzo/domain/entities/profile_interaction_entity.dart';
 import 'package:tranzo/domain/entities/selected_transfer_file.dart';
 import 'package:tranzo/domain/entities/transfer_batch_progress.dart';
 import 'package:tranzo/domain/entities/transfer_entity.dart';
+import 'package:tranzo/domain/entities/transfer_lifecycle_signal.dart';
 import 'package:tranzo/domain/entities/transfer_task.dart';
 import 'package:tranzo/domain/entities/user_entity.dart';
 import 'package:tranzo/domain/repositories/transfer_repository.dart';
@@ -76,6 +77,11 @@ class _FakeTransferRepository implements TransferRepository {
   }) => const Stream<IncomingTransferOffer>.empty();
 
   @override
+  Stream<TransferLifecycleSignalEntity> listenTransferSignals({
+    required String userId,
+  }) => const Stream<TransferLifecycleSignalEntity>.empty();
+
+  @override
   Future<TransferEntity> receiveFiles(String transferId) {
     throw UnimplementedError();
   }
@@ -118,6 +124,10 @@ class _FakeNetworkInfo implements NetworkInfo {
   @override
   Future<NetworkConnectionType> get connectionType async =>
       NetworkConnectionType.wifi;
+
+  @override
+  Stream<NetworkConnectionType> get onConnectionChanged =>
+      const Stream<NetworkConnectionType>.empty();
 
   @override
   Future<bool> get isConnected async => true;

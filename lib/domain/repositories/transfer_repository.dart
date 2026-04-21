@@ -6,6 +6,7 @@ import '../entities/selected_transfer_file.dart';
 import '../entities/transfer_batch_progress.dart';
 import '../entities/incoming_transfer_offer.dart';
 import '../entities/profile_interaction_entity.dart';
+import '../entities/transfer_lifecycle_signal.dart';
 
 abstract interface class TransferRepository {
   // Legacy transfer-task API kept for existing wiring.
@@ -34,6 +35,10 @@ abstract interface class TransferRepository {
 
   Stream<IncomingTransferOffer> listenIncomingTransfers({
     required String receiverId,
+  });
+
+  Stream<TransferLifecycleSignalEntity> listenTransferSignals({
+    required String userId,
   });
 
   Future<void> acceptIncomingTransfer({

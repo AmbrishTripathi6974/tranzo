@@ -5,6 +5,7 @@ enum NetworkConnectionType { none, wifi, mobile, other }
 abstract interface class NetworkInfo {
   Future<bool> get isConnected;
   Future<NetworkConnectionType> get connectionType;
+  Stream<NetworkConnectionType> get onConnectionChanged;
 }
 
 class NetworkInfoImpl implements NetworkInfo {
@@ -32,5 +33,22 @@ class NetworkInfoImpl implements NetworkInfo {
       return NetworkConnectionType.wifi;
     }
     return NetworkConnectionType.other;
+  }
+
+  @override
+  Stream<NetworkConnectionType> get onConnectionChanged {
+    return _connectivity.onConnectivityChanged.map((List<ConnectivityResult> r) {
+      if (r.isEmpty || r.contains(ConnectivityResult.none)) {
+        return NetworkConnectionType.none;
+      }
+      if (r.contains(ConnectivityResult.mobile)) {
+        return NetworkConnectionType.mobile;
+      }
+      if (r.contains(ConnectivityResult.wifi) ||
+          r.contains(ConnectivityResult.ethernet)) {
+        return NetworkConnectionType.wifi;
+      }
+      return NetworkConnectionType.other;
+    });
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:crypto/crypto.dart';
 import '../../domain/entities/transfer_task.dart';
@@ -11,10 +12,12 @@ import '../../domain/entities/transfer_status.dart';
 import '../../domain/entities/file_status.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/entities/file_entity.dart';
+import '../../domain/entities/transfer_lifecycle_signal.dart';
 import '../../domain/repositories/transfer_repository.dart';
 import '../../core/database/isar/collections/transfer_collection.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/exceptions.dart';
+import '../../core/network/network_info.dart';
 import '../../core/services/realtime_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/services/transfer_service.dart';
@@ -31,7 +34,7 @@ import '../datasources/remote/transfer_remote_data_source.dart';
 import '../models/transfer_task_model.dart';
 
 class TransferRepositoryImpl implements TransferRepository {
-  const TransferRepositoryImpl({
+  TransferRepositoryImpl({
     required TransferRemoteDataSource remoteDataSource,
     required TransferLocalDataSource localDataSource,
     required TransferService transferService,
@@ -42,6 +45,7 @@ class TransferRepositoryImpl implements TransferRepository {
     required RetryQueue retryQueue,
     required StorageService storageService,
     required BackgroundTransferRuntimeService backgroundRuntimeService,
+    required NetworkInfo networkInfo,
   }) : _remoteDataSource = remoteDataSource,
        _localDataSource = localDataSource,
        _transferService = transferService,
@@ -51,7 +55,16 @@ class TransferRepositoryImpl implements TransferRepository {
        _downloadManager = downloadManager,
        _retryQueue = retryQueue,
        _storageService = storageService,
-       _backgroundRuntimeService = backgroundRuntimeService;
+       _backgroundRuntimeService = backgroundRuntimeService,
+       _networkInfo = networkInfo {
+    _networkInfo.onConnectionChanged.listen((
+      NetworkConnectionType type,
+    ) {
+      if (type != NetworkConnectionType.none) {
+        _flushSignalQueue();
+      }
+    });
+  }
 
   final TransferRemoteDataSource _remoteDataSource;
   final TransferLocalDataSource _localDataSource;
@@ -63,6 +76,11 @@ class TransferRepositoryImpl implements TransferRepository {
   final RetryQueue _retryQueue;
   final StorageService _storageService;
   final BackgroundTransferRuntimeService _backgroundRuntimeService;
+  final NetworkInfo _networkInfo;
+  final List<TransferLifecycleSignal> _pendingSignals =
+      <TransferLifecycleSignal>[];
+  bool _isFlushingSignals = false;
+  DateTime? _lastProgressSyncAt;
 
   @override
   Future<void> startUpload(TransferTask task) async {
@@ -193,9 +211,14 @@ class TransferRepositoryImpl implements TransferRepository {
       yield parsed;
     }
 
-    await for (final Map<String, dynamic> payload
-        in _realtimeService.listenIncomingTransfers(receiverId: receiverId)) {
-      final IncomingTransferOffer? offer = _mapPayloadToIncomingOffer(payload);
+    await for (final TransferLifecycleSignal signal
+        in _realtimeService.listenTransferSignals(receiverId: receiverId)) {
+      if (signal.event != TransferLifecycleEvent.transferStarted) {
+        continue;
+      }
+      final IncomingTransferOffer? offer = _mapPayloadToIncomingOffer(
+        signal.toPayload(),
+      );
       if (offer == null) {
         continue;
       }
@@ -221,6 +244,23 @@ class TransferRepositoryImpl implements TransferRepository {
       );
       yield offer;
     }
+  }
+
+  @override
+  Stream<TransferLifecycleSignalEntity> listenTransferSignals({
+    required String userId,
+  }) {
+    return _realtimeService
+        .listenTransferSignals(receiverId: userId)
+        .map((TransferLifecycleSignal signal) {
+          return TransferLifecycleSignalEntity(
+            transferId: signal.transferId,
+            senderId: signal.senderId,
+            receiverId: signal.receiverId,
+            event: _mapSignalEventToEntity(signal.event),
+            emittedAt: signal.emittedAt,
+          );
+        });
   }
 
   @override
@@ -268,6 +308,20 @@ class TransferRepositoryImpl implements TransferRepository {
       await _transferService.updateTransferStatus(
         transferId: transfer.transferId,
         status: TransferStatus.downloading.name,
+      );
+      await _emitOrQueueSignal(
+        TransferLifecycleSignal(
+          transferId: transfer.transferId,
+          senderId: transfer.senderId,
+          receiverId: transfer.receiverId,
+          event: TransferLifecycleEvent.transferAccepted,
+          emittedAt: DateTime.now(),
+          fileId: transfer.fileId,
+          fileName: transfer.fileName,
+          fileSize: transfer.fileSize,
+          fileHash: transfer.fileHash,
+          storagePath: transfer.storagePath,
+        ),
       );
 
       final TransferTask task = TransferTask(
@@ -320,6 +374,10 @@ class TransferRepositoryImpl implements TransferRepository {
             fileName: transfer.fileName,
             progressPercent: _progressPercent(chunk.index + 1, chunks.length),
           );
+          await _syncProgressThrottled(
+            transferId: transfer.transferId,
+            status: TransferStatus.downloading,
+          );
         }
       } catch (_) {
         await _backgroundRuntimeService.scheduleRetry(
@@ -342,6 +400,20 @@ class TransferRepositoryImpl implements TransferRepository {
         await _transferService.updateTransferStatus(
           transferId: transfer.transferId,
           status: TransferStatus.failed.name,
+        );
+        await _emitOrQueueSignal(
+          TransferLifecycleSignal(
+            transferId: transfer.transferId,
+            senderId: transfer.senderId,
+            receiverId: transfer.receiverId,
+            event: TransferLifecycleEvent.transferFailed,
+            emittedAt: DateTime.now(),
+            fileId: transfer.fileId,
+            fileName: transfer.fileName,
+            fileSize: transfer.fileSize,
+            fileHash: transfer.fileHash,
+            storagePath: transfer.storagePath,
+          ),
         );
         throw const AppException(
           'Received file is corrupted (SHA-256 mismatch).',
@@ -367,6 +439,20 @@ class TransferRepositoryImpl implements TransferRepository {
       await _transferService.updateTransferStatus(
         transferId: transfer.transferId,
         status: TransferStatus.completed.name,
+      );
+      await _emitOrQueueSignal(
+        TransferLifecycleSignal(
+          transferId: transfer.transferId,
+          senderId: transfer.senderId,
+          receiverId: transfer.receiverId,
+          event: TransferLifecycleEvent.transferCompleted,
+          emittedAt: DateTime.now(),
+          fileId: transfer.fileId,
+          fileName: transfer.fileName,
+          fileSize: transfer.fileSize,
+          fileHash: transfer.fileHash,
+          storagePath: transfer.storagePath,
+        ),
       );
       await _downloadManager.finalizeSession(transfer.transferId);
     } finally {
@@ -520,6 +606,20 @@ class TransferRepositoryImpl implements TransferRepository {
                 createdAt: DateTime.now(),
               ),
             );
+        await _emitOrQueueSignal(
+          TransferLifecycleSignal(
+            transferId: session.transferId,
+            senderId: senderId,
+            receiverId: receiverId,
+            event: TransferLifecycleEvent.transferStarted,
+            emittedAt: DateTime.now(),
+            fileId: file.id,
+            fileName: file.fileName,
+            fileSize: file.sizeBytes,
+            fileHash: '${file.fileName}_${file.sizeBytes}',
+            storagePath: '$sessionId/${file.id}',
+          ),
+        );
         final TransferTask task = TransferTask(
           id: file.id,
           fileName: file.fileName,
@@ -576,6 +676,10 @@ class TransferRepositoryImpl implements TransferRepository {
             transferId: sessionId,
             fileName: file.fileName,
             progressPercent: _progressPercent(chunk.index + 1, chunks.length),
+          );
+          await _syncProgressThrottled(
+            transferId: session.transferId,
+            status: TransferStatus.uploading,
           );
           yield TransferBatchProgress(
             sessionId: sessionId,
@@ -713,5 +817,79 @@ class TransferRepositoryImpl implements TransferRepository {
       storagePath: storagePath,
       createdAt: DateTime.tryParse(createdAtRaw) ?? DateTime.now(),
     );
+  }
+
+  Future<void> _emitOrQueueSignal(TransferLifecycleSignal signal) async {
+    final bool online = await _networkInfo.isConnected;
+    if (!online) {
+      _pendingSignals.add(signal);
+      return;
+    }
+    try {
+      await _realtimeService.sendTransferSignal(signal: signal);
+      await _flushSignalQueue();
+    } catch (_) {
+      _pendingSignals.add(signal);
+    }
+  }
+
+  Future<void> _flushSignalQueue() async {
+    if (_isFlushingSignals || _pendingSignals.isEmpty) {
+      return;
+    }
+    final bool online = await _networkInfo.isConnected;
+    if (!online) {
+      return;
+    }
+    _isFlushingSignals = true;
+    try {
+      final List<TransferLifecycleSignal> queued =
+          List<TransferLifecycleSignal>.from(_pendingSignals);
+      for (final TransferLifecycleSignal signal in queued) {
+        try {
+          await _realtimeService.sendTransferSignal(signal: signal);
+          _pendingSignals.remove(signal);
+        } catch (_) {
+          break;
+        }
+      }
+    } finally {
+      _isFlushingSignals = false;
+    }
+  }
+
+  Future<void> _syncProgressThrottled({
+    required String transferId,
+    required TransferStatus status,
+  }) async {
+    final DateTime now = DateTime.now();
+    if (_lastProgressSyncAt != null &&
+        now.difference(_lastProgressSyncAt!) < const Duration(seconds: 3)) {
+      return;
+    }
+    _lastProgressSyncAt = now;
+    try {
+      await _transferService.updateTransferStatus(
+        transferId: transferId,
+        status: status.name,
+      );
+    } catch (_) {
+      // Local-first behavior: never block transfer on backend sync failures.
+    }
+  }
+
+  TransferLifecycleEventType _mapSignalEventToEntity(
+    TransferLifecycleEvent event,
+  ) {
+    switch (event) {
+      case TransferLifecycleEvent.transferStarted:
+        return TransferLifecycleEventType.transferStarted;
+      case TransferLifecycleEvent.transferAccepted:
+        return TransferLifecycleEventType.transferAccepted;
+      case TransferLifecycleEvent.transferCompleted:
+        return TransferLifecycleEventType.transferCompleted;
+      case TransferLifecycleEvent.transferFailed:
+        return TransferLifecycleEventType.transferFailed;
+    }
   }
 }

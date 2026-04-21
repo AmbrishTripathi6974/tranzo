@@ -25,6 +25,9 @@ class _DownloadPageState extends State<DownloadPage> {
         context.read<TransferBloc>().add(
           IncomingTransferListeningRequested(profileState.user!.id),
         );
+        context.read<TransferBloc>().add(
+          TransferLifecycleListeningRequested(profileState.user!.id),
+        );
       }
     });
   }
@@ -44,6 +47,9 @@ class _DownloadPageState extends State<DownloadPage> {
                   profileState.user != null) {
                 context.read<TransferBloc>().add(
                   IncomingTransferListeningRequested(profileState.user!.id),
+                );
+                context.read<TransferBloc>().add(
+                  TransferLifecycleListeningRequested(profileState.user!.id),
                 );
               }
             },

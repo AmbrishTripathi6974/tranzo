@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 
 import '../../../domain/entities/selected_transfer_file.dart';
 import '../../../domain/entities/incoming_transfer_offer.dart';
+import '../../../domain/entities/transfer_lifecycle_signal.dart';
 import '../../../domain/entities/transfer_task.dart';
 
 sealed class TransferEvent extends Equatable {
@@ -72,6 +73,24 @@ class IncomingTransferListeningRequested extends TransferEvent {
 
   @override
   List<Object?> get props => <Object?>[receiverId];
+}
+
+class TransferLifecycleListeningRequested extends TransferEvent {
+  const TransferLifecycleListeningRequested(this.userId);
+
+  final String userId;
+
+  @override
+  List<Object?> get props => <Object?>[userId];
+}
+
+class TransferLifecycleSignalReceived extends TransferEvent {
+  const TransferLifecycleSignalReceived(this.signal);
+
+  final TransferLifecycleSignalEntity signal;
+
+  @override
+  List<Object?> get props => <Object?>[signal];
 }
 
 class IncomingTransferReceived extends TransferEvent {

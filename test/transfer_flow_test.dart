@@ -9,6 +9,7 @@ import 'package:tranzo/domain/entities/profile_interaction_entity.dart';
 import 'package:tranzo/domain/entities/selected_transfer_file.dart';
 import 'package:tranzo/domain/entities/transfer_batch_progress.dart';
 import 'package:tranzo/domain/entities/transfer_entity.dart';
+import 'package:tranzo/domain/entities/transfer_lifecycle_signal.dart';
 import 'package:tranzo/domain/entities/transfer_task.dart';
 import 'package:tranzo/domain/entities/user_entity.dart';
 import 'package:tranzo/domain/repositories/transfer_repository.dart';
@@ -363,6 +364,42 @@ void main() {
         await bloc.close();
       },
     );
+
+    test('stores remote lifecycle signal as reconciliation hint', () async {
+      final _FakeTransferRepository repository = _FakeTransferRepository();
+      final TransferBloc bloc = TransferBloc(
+        startUpload: StartUploadUseCase(repository),
+        startDownload: StartDownloadUseCase(repository),
+        retryTransfer: RetryTransferUseCase(repository),
+        sendFiles: SendFiles(repository),
+        checkStorageAvailability: CheckStorageAvailability(repository),
+        evaluateUploadPolicy: EvaluateUploadPolicyUseCase(
+          _FakeNetworkInfo(isMobile: false),
+        ),
+        checkTransferPermissions: CheckTransferPermissionsUseCase(
+          _FakePermissionService(),
+        ),
+      );
+
+      bloc.add(
+        TransferLifecycleSignalReceived(
+          TransferLifecycleSignalEntity(
+            transferId: 't-remote',
+            senderId: 'u-1',
+            receiverId: 'u-2',
+            event: TransferLifecycleEventType.transferCompleted,
+            emittedAt: DateTime(2026, 1, 1),
+          ),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        bloc.state.lifecycleSignalsByTransferId['t-remote']?.event,
+        TransferLifecycleEventType.transferCompleted,
+      );
+      await bloc.close();
+    });
   });
 }
 
@@ -402,6 +439,11 @@ class _FakeTransferRepository implements TransferRepository {
   Stream<IncomingTransferOffer> listenIncomingTransfers({
     required String receiverId,
   }) => const Stream<IncomingTransferOffer>.empty();
+
+  @override
+  Stream<TransferLifecycleSignalEntity> listenTransferSignals({
+    required String userId,
+  }) => const Stream<TransferLifecycleSignalEntity>.empty();
 
   @override
   Future<TransferEntity> receiveFiles(String transferId) {
@@ -476,6 +518,10 @@ class _FakeNetworkInfo implements NetworkInfo {
   @override
   Future<NetworkConnectionType> get connectionType async =>
       isMobile ? NetworkConnectionType.mobile : NetworkConnectionType.wifi;
+
+  @override
+  Stream<NetworkConnectionType> get onConnectionChanged =>
+      const Stream<NetworkConnectionType>.empty();
 
   @override
   Future<bool> get isConnected async => true;

@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 import '../../../domain/entities/incoming_transfer_offer.dart';
 import '../../../domain/entities/transfer_batch_progress.dart';
 import '../../../domain/entities/selected_transfer_file.dart';
+import '../../../domain/entities/transfer_lifecycle_signal.dart';
 
 enum TransferStatus { initial, loading, success, error }
 
@@ -40,6 +41,8 @@ class TransferState extends Equatable {
     this.pendingUploadConfirmation,
     this.uiWarningMessage,
     this.showInAppProgress = false,
+    this.lifecycleSignalsByTransferId =
+        const <String, TransferLifecycleSignalEntity>{},
   });
 
   final TransferStatus status;
@@ -52,6 +55,7 @@ class TransferState extends Equatable {
   final PendingUploadConfirmation? pendingUploadConfirmation;
   final String? uiWarningMessage;
   final bool showInAppProgress;
+  final Map<String, TransferLifecycleSignalEntity> lifecycleSignalsByTransferId;
 
   TransferState copyWith({
     TransferStatus? status,
@@ -64,6 +68,7 @@ class TransferState extends Equatable {
     PendingUploadConfirmation? pendingUploadConfirmation,
     String? uiWarningMessage,
     bool? showInAppProgress,
+    Map<String, TransferLifecycleSignalEntity>? lifecycleSignalsByTransferId,
     bool clearActiveTransferId = false,
     bool clearErrorMessage = false,
     bool clearBatchProgress = false,
@@ -93,6 +98,8 @@ class TransferState extends Equatable {
           ? null
           : (uiWarningMessage ?? this.uiWarningMessage),
       showInAppProgress: showInAppProgress ?? this.showInAppProgress,
+      lifecycleSignalsByTransferId:
+          lifecycleSignalsByTransferId ?? this.lifecycleSignalsByTransferId,
     );
   }
 
@@ -108,5 +115,6 @@ class TransferState extends Equatable {
     pendingUploadConfirmation,
     uiWarningMessage,
     showInAppProgress,
+    lifecycleSignalsByTransferId,
   ];
 }

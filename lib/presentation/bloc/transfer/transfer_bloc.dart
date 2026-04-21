@@ -4,6 +4,7 @@ import 'dart:async';
 import '../../../core/constants/app_constants.dart';
 import '../../../domain/entities/incoming_transfer_offer.dart';
 import '../../../domain/entities/selected_transfer_file.dart';
+import '../../../domain/entities/transfer_lifecycle_signal.dart';
 import '../../../domain/usecases/retry_transfer_usecase.dart';
 import '../../../domain/usecases/send_files_usecase.dart';
 import '../../../domain/usecases/start_download_usecase.dart';
@@ -40,6 +41,8 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     on<IncomingTransferReceived>(_onIncomingTransferReceived);
     on<IncomingTransferAccepted>(_onIncomingTransferAccepted);
     on<IncomingTransferRejected>(_onIncomingTransferRejected);
+    on<TransferLifecycleListeningRequested>(_onLifecycleListeningRequested);
+    on<TransferLifecycleSignalReceived>(_onLifecycleSignalReceived);
     on<TransferBatchUploadConfirmed>(_onBatchUploadConfirmed);
     on<TransferBatchUploadCancelled>(_onBatchUploadCancelled);
     on<TransferUiEffectConsumed>(_onUiEffectConsumed);
@@ -53,6 +56,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
   final EvaluateUploadPolicyUseCase _evaluateUploadPolicy;
   final CheckTransferPermissionsUseCase _checkTransferPermissions;
   StreamSubscription<IncomingTransferOffer>? _incomingSubscription;
+  StreamSubscription<TransferLifecycleSignalEntity>? _lifecycleSubscription;
 
   Future<void> _onUploadRequested(
     TransferUploadRequested event,
@@ -273,6 +277,37 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
         });
   }
 
+  Future<void> _onLifecycleListeningRequested(
+    TransferLifecycleListeningRequested event,
+    Emitter<TransferState> emit,
+  ) async {
+    await _lifecycleSubscription?.cancel();
+    _lifecycleSubscription = _sendFiles
+        .listenSignals(userId: event.userId)
+        .listen((TransferLifecycleSignalEntity signal) {
+          add(TransferLifecycleSignalReceived(signal));
+        });
+  }
+
+  void _onLifecycleSignalReceived(
+    TransferLifecycleSignalReceived event,
+    Emitter<TransferState> emit,
+  ) {
+    final Map<String, TransferLifecycleSignalEntity> nextSignals =
+        <String, TransferLifecycleSignalEntity>{
+          ...state.lifecycleSignalsByTransferId,
+          event.signal.transferId: event.signal,
+        };
+    final bool hasActiveLocalTransfer = state.activeTransferId != null;
+    if (hasActiveLocalTransfer &&
+        event.signal.event != TransferLifecycleEventType.transferCompleted &&
+        event.signal.event != TransferLifecycleEventType.transferFailed) {
+      emit(state.copyWith(lifecycleSignalsByTransferId: nextSignals));
+      return;
+    }
+    emit(state.copyWith(lifecycleSignalsByTransferId: nextSignals));
+  }
+
   void _onIncomingTransferReceived(
     IncomingTransferReceived event,
     Emitter<TransferState> emit,
@@ -358,6 +393,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
   @override
   Future<void> close() async {
     await _incomingSubscription?.cancel();
+    await _lifecycleSubscription?.cancel();
     return super.close();
   }
 }
