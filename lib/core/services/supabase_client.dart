@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../errors/exceptions.dart';
 
 /// One-time Supabase bootstrap and access to the shared [SupabaseClient].
@@ -21,11 +22,16 @@ final class TranzoSupabase {
   }
 
   static Future<void> initializeFromEnvironment() {
-    const String url = String.fromEnvironment('SUPABASE_URL');
-    const String key = String.fromEnvironment('SUPABASE_ANON_KEY');
+    final String url = dotenv.env['SUPABASE_URL'] ?? '';
+    final String key = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
     if (url.trim().isEmpty) {
       throw const SecurityException(
         'Missing SUPABASE_URL. Set a secure HTTPS endpoint.',
+      );
+    }
+    if (key.trim().isEmpty) {
+      throw const SecurityException(
+        'Missing SUPABASE_ANON_KEY. Set your public anon key in .env.',
       );
     }
     return initialize(supabaseUrl: url, anonKey: key);

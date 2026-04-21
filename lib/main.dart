@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'core/services/background_transfer_runtime_service.dart';
 import 'core/services/supabase_client.dart';
@@ -8,6 +9,7 @@ import 'presentation/app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: '.env');
   await TranzoSupabase.initializeFromEnvironment();
   await configureDependencies();
   await registerIsarDatabase();
