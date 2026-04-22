@@ -11,6 +11,7 @@ import 'package:tranzo/domain/entities/transfer_entity.dart';
 import 'package:tranzo/domain/entities/transfer_lifecycle_signal.dart';
 import 'package:tranzo/domain/entities/transfer_task.dart';
 import 'package:tranzo/domain/entities/user_entity.dart';
+import 'package:tranzo/domain/repositories/mobile_data_large_upload_consent_repository.dart';
 import 'package:tranzo/domain/repositories/transfer_repository.dart';
 import 'package:tranzo/domain/usecases/cancel_transfer_usecase.dart';
 import 'package:tranzo/domain/usecases/check_storage_availability_usecase.dart';
@@ -98,6 +99,8 @@ void main() {
 }
 
 TransferBloc _buildBloc(_ReliabilityFakeTransferRepository repository) {
+  final _ReliabilityFakeMobileDataConsent mobileDataConsent =
+      _ReliabilityFakeMobileDataConsent();
   return TransferBloc(
     startUpload: StartUploadUseCase(repository),
     startDownload: StartDownloadUseCase(repository),
@@ -105,7 +108,10 @@ TransferBloc _buildBloc(_ReliabilityFakeTransferRepository repository) {
     cancelTransfer: CancelTransferUseCase(repository),
     sendFiles: SendFiles(repository),
     validateTransferBatch: ValidateTransferBatchUseCase(
-      EvaluateUploadPolicyUseCase(_ReliabilityFakeNetworkInfo()),
+      EvaluateUploadPolicyUseCase(
+        _ReliabilityFakeNetworkInfo(),
+        mobileDataConsent,
+      ),
     ),
     prepareIncomingTransfer: PrepareIncomingTransferUseCase(
       checkTransferPermissions: CheckTransferPermissionsUseCase(
@@ -116,6 +122,7 @@ TransferBloc _buildBloc(_ReliabilityFakeTransferRepository repository) {
     prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
       CheckTransferPermissionsUseCase(_ReliabilityFakePermissionService()),
     ),
+    mobileDataLargeUploadConsent: mobileDataConsent,
   );
 }
 
@@ -211,6 +218,19 @@ class _ReliabilityFakeTransferRepository implements TransferRepository {
 
   @override
   Future<bool> hasAvailableStorage(int requiredBytes) async => true;
+}
+
+class _ReliabilityFakeMobileDataConsent
+    implements MobileDataLargeUploadConsentRepository {
+  bool _consented = false;
+
+  @override
+  Future<bool> hasUserConsented() async => _consented;
+
+  @override
+  Future<void> setUserConsented(bool value) async {
+    _consented = value;
+  }
 }
 
 class _ReliabilityFakeNetworkInfo implements NetworkInfo {

@@ -1,6 +1,7 @@
 import '../../core/constants/app_constants.dart';
 import '../../core/network/network_info.dart';
 import '../entities/selected_transfer_file.dart';
+import '../repositories/mobile_data_large_upload_consent_repository.dart';
 
 class UploadPolicyDecision {
   const UploadPolicyDecision({
@@ -13,9 +14,13 @@ class UploadPolicyDecision {
 }
 
 class EvaluateUploadPolicyUseCase {
-  const EvaluateUploadPolicyUseCase(this._networkInfo);
+  const EvaluateUploadPolicyUseCase(
+    this._networkInfo,
+    this._mobileDataConsent,
+  );
 
   final NetworkInfo _networkInfo;
+  final MobileDataLargeUploadConsentRepository _mobileDataConsent;
 
   Future<UploadPolicyDecision> call(List<SelectedTransferFile> files) async {
     final int totalBytes = files.fold<int>(
@@ -24,9 +29,12 @@ class EvaluateUploadPolicyUseCase {
     );
     final NetworkConnectionType connectionType =
         await _networkInfo.connectionType;
-    final bool requiresConfirmation =
+    bool requiresConfirmation =
         connectionType == NetworkConnectionType.mobile &&
         totalBytes > AppConstants.mobileDataConfirmationThresholdBytes;
+    if (requiresConfirmation && await _mobileDataConsent.hasUserConsented()) {
+      requiresConfirmation = false;
+    }
     return UploadPolicyDecision(
       requiresMobileDataConfirmation: requiresConfirmation,
       totalBytes: totalBytes,

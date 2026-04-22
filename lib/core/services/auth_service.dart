@@ -57,6 +57,42 @@ final class AuthService {
     throw const AppException('Could not allocate a unique short code.');
   }
 
+  /// When Supabase still has a session but local storage was cleared, loads
+  /// [user_id] + [short_code] from [recipient_codes] so the app can repopulate
+  /// the local user row. Returns null if there is no session or no row.
+  Future<UserSessionSnapshot?> loadCurrentSessionProfile() async {
+    final User? user = _client.auth.currentUser;
+    if (user == null) {
+      return null;
+    }
+
+    final Map<String, dynamic>? row = await _client
+        .from(_recipientCodesTable)
+        .select('short_code')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    if (row == null) {
+      return null;
+    }
+
+    final String? code = row['short_code'] as String?;
+    if (code == null || code.isEmpty) {
+      return null;
+    }
+
+    final Object? metaName = user.userMetadata?['display_name'];
+    final String username = metaName is String && metaName.isNotEmpty
+        ? metaName
+        : 'User';
+
+    return UserSessionSnapshot(
+      userId: user.id,
+      shortCode: code,
+      username: username,
+    );
+  }
+
   /// Returns the peer [userId] when [rawCode] matches an active short code.
   Future<RecipientCodeValidation?> validateRecipientCode(String rawCode) async {
     final String normalized = rawCode.trim().toUpperCase();
@@ -114,4 +150,16 @@ final class RecipientCodeValidation {
 
   final String recipientUserId;
   final String shortCode;
+}
+
+final class UserSessionSnapshot {
+  const UserSessionSnapshot({
+    required this.userId,
+    required this.shortCode,
+    required this.username,
+  });
+
+  final String userId;
+  final String shortCode;
+  final String username;
 }

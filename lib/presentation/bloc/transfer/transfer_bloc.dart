@@ -12,6 +12,7 @@ import '../../../domain/usecases/start_upload_usecase.dart';
 import '../../../domain/usecases/cancel_transfer_usecase.dart';
 import '../../../domain/usecases/prepare_batch_upload_ui_usecase.dart';
 import '../../../domain/usecases/prepare_incoming_transfer_usecase.dart';
+import '../../../domain/repositories/mobile_data_large_upload_consent_repository.dart';
 import '../../../domain/usecases/validate_transfer_batch_usecase.dart';
 import '../../../domain/entities/transfer_batch_progress.dart';
 import 'transfer_event.dart';
@@ -27,6 +28,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     required PrepareBatchUploadUiUseCase prepareBatchUploadUi,
     required ValidateTransferBatchUseCase validateTransferBatch,
     required PrepareIncomingTransferUseCase prepareIncomingTransfer,
+    required MobileDataLargeUploadConsentRepository mobileDataLargeUploadConsent,
   }) : _startUpload = startUpload,
        _startDownload = startDownload,
        _retryTransfer = retryTransfer,
@@ -35,6 +37,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
        _prepareBatchUploadUi = prepareBatchUploadUi,
        _validateTransferBatch = validateTransferBatch,
        _prepareIncomingTransfer = prepareIncomingTransfer,
+       _mobileDataLargeUploadConsent = mobileDataLargeUploadConsent,
        super(const TransferState()) {
     on<TransferUploadRequested>(_onUploadRequested);
     on<TransferDownloadRequested>(_onDownloadRequested);
@@ -50,6 +53,12 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     on<TransferBatchUploadConfirmed>(_onBatchUploadConfirmed);
     on<TransferBatchUploadCancelled>(_onBatchUploadCancelled);
     on<TransferUiEffectConsumed>(_onUiEffectConsumed);
+    on<TransferUploadDraftFilesAppended>(_onUploadDraftFilesAppended);
+    on<TransferUploadDraftFileRemoved>(_onUploadDraftFileRemoved);
+    on<TransferUploadDraftPickerBusy>(_onUploadDraftPickerBusy);
+    on<TransferUploadDraftSelectionNoticeConsumed>(
+      _onUploadDraftSelectionNoticeConsumed,
+    );
   }
 
   final StartUploadUseCase _startUpload;
@@ -60,6 +69,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
   final PrepareBatchUploadUiUseCase _prepareBatchUploadUi;
   final ValidateTransferBatchUseCase _validateTransferBatch;
   final PrepareIncomingTransferUseCase _prepareIncomingTransfer;
+  final MobileDataLargeUploadConsentRepository _mobileDataLargeUploadConsent;
   StreamSubscription<IncomingTransferOffer>? _incomingSubscription;
   StreamSubscription<TransferLifecycleSignalEntity>? _lifecycleSubscription;
 
@@ -185,6 +195,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       return;
     }
     emit(state.copyWith(clearPendingUploadConfirmation: true));
+    await _mobileDataLargeUploadConsent.setUserConsented(true);
     await _startBatchUpload(
       emit,
       senderId: pending.senderId,
@@ -215,6 +226,64 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
         clearPendingUploadConfirmation: true,
       ),
     );
+  }
+
+  void _onUploadDraftFilesAppended(
+    TransferUploadDraftFilesAppended event,
+    Emitter<TransferState> emit,
+  ) {
+    final List<SelectedTransferFile> picked = event.picked;
+    final int countBefore = state.selectedUploadFiles.length;
+    final Set<String> seenPaths = <String>{
+      for (final SelectedTransferFile f in state.selectedUploadFiles) f.localPath,
+    };
+    final List<SelectedTransferFile> merged = List<SelectedTransferFile>.from(
+      state.selectedUploadFiles,
+    );
+    for (final SelectedTransferFile file in picked) {
+      if (seenPaths.add(file.localPath)) {
+        merged.add(file);
+      }
+    }
+    final bool duplicate =
+        picked.isNotEmpty && merged.length == countBefore;
+    emit(
+      state.copyWith(
+        selectedUploadFiles: merged,
+        uploadDraftSelectionNotice: duplicate
+            ? 'Those files are already in the list.'
+            : null,
+        clearUploadDraftSelectionNotice: !duplicate,
+      ),
+    );
+  }
+
+  void _onUploadDraftFileRemoved(
+    TransferUploadDraftFileRemoved event,
+    Emitter<TransferState> emit,
+  ) {
+    emit(
+      state.copyWith(
+        selectedUploadFiles: state.selectedUploadFiles
+            .where((SelectedTransferFile f) => f.localPath != event.localPath)
+            .toList(growable: false),
+        clearUploadDraftSelectionNotice: true,
+      ),
+    );
+  }
+
+  void _onUploadDraftPickerBusy(
+    TransferUploadDraftPickerBusy event,
+    Emitter<TransferState> emit,
+  ) {
+    emit(state.copyWith(uploadDraftPickerBusy: event.busy));
+  }
+
+  void _onUploadDraftSelectionNoticeConsumed(
+    TransferUploadDraftSelectionNoticeConsumed event,
+    Emitter<TransferState> emit,
+  ) {
+    emit(state.copyWith(clearUploadDraftSelectionNotice: true));
   }
 
   Future<void> _startBatchUpload(
@@ -263,6 +332,10 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
             batchSessionId: progress.sessionId,
             batchProgressByFileId: byId,
             clearErrorMessage: true,
+            selectedUploadFiles: total >= 1
+                ? const <SelectedTransferFile>[]
+                : state.selectedUploadFiles,
+            clearUploadDraftSelectionNotice: total >= 1,
           );
         },
       );

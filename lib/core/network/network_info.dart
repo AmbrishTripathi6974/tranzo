@@ -22,35 +22,25 @@ class NetworkInfoImpl implements NetworkInfo {
   Future<NetworkConnectionType> get connectionType async {
     final List<ConnectivityResult> results = await _connectivity
         .checkConnectivity();
-    if (results.isEmpty || results.contains(ConnectivityResult.none)) {
-      return NetworkConnectionType.none;
-    }
-    if (results.contains(ConnectivityResult.mobile)) {
-      return NetworkConnectionType.mobile;
-    }
-    if (results.contains(ConnectivityResult.wifi) ||
-        results.contains(ConnectivityResult.ethernet)) {
-      return NetworkConnectionType.wifi;
-    }
-    return NetworkConnectionType.other;
+    return _mapConnectivityResults(results);
   }
 
   @override
   Stream<NetworkConnectionType> get onConnectionChanged {
-    return _connectivity.onConnectivityChanged.map((
-      List<ConnectivityResult> r,
-    ) {
-      if (r.isEmpty || r.contains(ConnectivityResult.none)) {
-        return NetworkConnectionType.none;
-      }
-      if (r.contains(ConnectivityResult.mobile)) {
-        return NetworkConnectionType.mobile;
-      }
-      if (r.contains(ConnectivityResult.wifi) ||
-          r.contains(ConnectivityResult.ethernet)) {
-        return NetworkConnectionType.wifi;
-      }
-      return NetworkConnectionType.other;
-    });
+    return _connectivity.onConnectivityChanged.map(_mapConnectivityResults);
   }
+}
+
+NetworkConnectionType _mapConnectivityResults(List<ConnectivityResult> r) {
+  if (r.isEmpty || r.contains(ConnectivityResult.none)) {
+    return NetworkConnectionType.none;
+  }
+  if (r.contains(ConnectivityResult.wifi) ||
+      r.contains(ConnectivityResult.ethernet)) {
+    return NetworkConnectionType.wifi;
+  }
+  if (r.contains(ConnectivityResult.mobile)) {
+    return NetworkConnectionType.mobile;
+  }
+  return NetworkConnectionType.other;
 }

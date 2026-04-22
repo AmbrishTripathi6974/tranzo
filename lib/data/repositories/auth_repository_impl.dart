@@ -46,11 +46,34 @@ class AuthRepositoryImpl implements AuthRepository {
     final UserCollection? cached = await _isar.userCollections
         .where()
         .findFirst();
-    if (cached == null) {
+    if (cached != null) {
+      return _entityFromCollection(cached);
+    }
+
+    final UserSessionSnapshot? snapshot =
+        await _authService.loadCurrentSessionProfile();
+    if (snapshot == null) {
       return null;
     }
 
-    final userModel = UserModel(
+    await _isar.writeTxn(() async {
+      final UserCollection userCollection = UserCollection()
+        ..supabaseUserId = snapshot.userId
+        ..displayName = snapshot.username
+        ..shortCode = snapshot.shortCode
+        ..updatedAt = DateTime.now();
+      await _isar.userCollections.put(userCollection);
+    });
+
+    return UserEntity(
+      id: snapshot.userId,
+      shortCode: snapshot.shortCode,
+      username: snapshot.username,
+    );
+  }
+
+  UserEntity _entityFromCollection(UserCollection cached) {
+    final UserModel userModel = UserModel(
       id: cached.supabaseUserId,
       shortCode: cached.shortCode ?? '',
       username: cached.displayName ?? '',

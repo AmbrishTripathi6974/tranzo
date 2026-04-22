@@ -43,6 +43,9 @@ class TransferState extends Equatable {
     this.showInAppProgress = false,
     this.lifecycleSignalsByTransferId =
         const <String, TransferLifecycleSignalEntity>{},
+    this.selectedUploadFiles = const <SelectedTransferFile>[],
+    this.uploadDraftPickerBusy = false,
+    this.uploadDraftSelectionNotice,
   });
 
   final TransferStatus status;
@@ -56,6 +59,9 @@ class TransferState extends Equatable {
   final String? uiWarningMessage;
   final bool showInAppProgress;
   final Map<String, TransferLifecycleSignalEntity> lifecycleSignalsByTransferId;
+  final List<SelectedTransferFile> selectedUploadFiles;
+  final bool uploadDraftPickerBusy;
+  final String? uploadDraftSelectionNotice;
 
   TransferState copyWith({
     TransferStatus? status,
@@ -69,11 +75,15 @@ class TransferState extends Equatable {
     String? uiWarningMessage,
     bool? showInAppProgress,
     Map<String, TransferLifecycleSignalEntity>? lifecycleSignalsByTransferId,
+    List<SelectedTransferFile>? selectedUploadFiles,
+    bool? uploadDraftPickerBusy,
+    String? uploadDraftSelectionNotice,
     bool clearActiveTransferId = false,
     bool clearErrorMessage = false,
     bool clearBatchProgress = false,
     bool clearPendingUploadConfirmation = false,
     bool clearUiWarningMessage = false,
+    bool clearUploadDraftSelectionNotice = false,
   }) {
     return TransferState(
       status: status ?? this.status,
@@ -100,6 +110,12 @@ class TransferState extends Equatable {
       showInAppProgress: showInAppProgress ?? this.showInAppProgress,
       lifecycleSignalsByTransferId:
           lifecycleSignalsByTransferId ?? this.lifecycleSignalsByTransferId,
+      selectedUploadFiles: selectedUploadFiles ?? this.selectedUploadFiles,
+      uploadDraftPickerBusy:
+          uploadDraftPickerBusy ?? this.uploadDraftPickerBusy,
+      uploadDraftSelectionNotice: clearUploadDraftSelectionNotice
+          ? null
+          : (uploadDraftSelectionNotice ?? this.uploadDraftSelectionNotice),
     );
   }
 
@@ -116,5 +132,8 @@ class TransferState extends Equatable {
     uiWarningMessage,
     showInAppProgress,
     lifecycleSignalsByTransferId,
+    selectedUploadFiles,
+    uploadDraftPickerBusy,
+    uploadDraftSelectionNotice,
   ];
 }

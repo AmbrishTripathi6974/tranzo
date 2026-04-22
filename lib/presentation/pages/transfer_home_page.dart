@@ -12,30 +12,44 @@ class TransferHomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Tranzo Transfer Home')),
-      body: Padding(
+      appBar: AppBar(title: const Text('Tranzo')),
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            BlocBuilder<TransferBloc, TransferState>(
-              builder: (context, state) {
-                return TransferStatusCard(status: state.status);
-              },
+        children: <Widget>[
+          Text(
+            'Fast and reliable file transfer',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () => context.go(RouteNames.transfer),
-              child: const Text('Go to Transfer'),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Send files, track upload progress, and review history seamlessly.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-            const SizedBox(height: 8),
-            FilledButton.tonal(
-              onPressed: () => context.go(RouteNames.history),
-              child: const Text('Go to History'),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          BlocBuilder<TransferBloc, TransferState>(
+            builder: (context, state) {
+              return TransferStatusCard(status: state.status);
+            },
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: () => context.go(RouteNames.transfer),
+            icon: const Icon(Icons.upload_outlined),
+            label: const Text('Start New Transfer'),
+          ),
+          const SizedBox(height: 10),
+          FilledButton.tonalIcon(
+            onPressed: () => context.go(RouteNames.history),
+            icon: const Icon(Icons.history),
+            label: const Text('View History'),
+          ),
+        ],
       ),
     );
   }

@@ -1,6 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../core/errors/exceptions.dart';
 import '../../../domain/entities/profile_interaction_entity.dart';
 import '../../../domain/usecases/get_user_interactions_usecase.dart';
 import '../../../domain/usecases/get_user_profile_usecase.dart';
@@ -19,6 +18,8 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
 
   final GetUserProfile _getUserProfile;
   final GetUserInteractions _getUserInteractions;
+  static const Duration _profileLoadTimeout = Duration(seconds: 10);
+  static const Duration _interactionLoadTimeout = Duration(seconds: 10);
 
   Future<void> _onRequested(
     ProfileRequested event,
@@ -28,19 +29,41 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
       state.copyWith(status: ProfileStatus.loading, clearErrorMessage: true),
     );
     try {
-      final user = await _getUserProfile();
+      final user = await _getUserProfile().timeout(_profileLoadTimeout);
       if (user == null) {
-        throw const AppException('User profile not available.');
+        emit(
+          state.copyWith(
+            status: ProfileStatus.error,
+            errorMessage:
+                'User profile is not ready yet. Check your connection and try '
+                'again in a moment.',
+          ),
+        );
+        return;
       }
-      final List<ProfileInteractionEntity> interactions =
-          await _getUserInteractions(user.id);
       emit(
         state.copyWith(
           status: ProfileStatus.success,
           user: user,
-          interactions: interactions,
+          interactions: const <ProfileInteractionEntity>[],
+          clearErrorMessage: true,
         ),
       );
+      try {
+        final List<ProfileInteractionEntity> interactions = await _getUserInteractions(
+          user.id,
+        ).timeout(_interactionLoadTimeout);
+        emit(
+          state.copyWith(
+            status: ProfileStatus.success,
+            user: user,
+            interactions: interactions,
+            clearErrorMessage: true,
+          ),
+        );
+      } catch (_) {
+        // Keep profile usable even if interactions fail or time out.
+      }
     } catch (error) {
       emit(state.copyWith(status: ProfileStatus.error, errorMessage: '$error'));
     }

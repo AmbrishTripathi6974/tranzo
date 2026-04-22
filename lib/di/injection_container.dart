@@ -15,8 +15,10 @@ import '../core/services/transfer_service.dart';
 import '../data/datasources/local/transfer_local_data_source.dart';
 import '../data/datasources/remote/transfer_remote_data_source.dart';
 import '../data/repositories/auth_repository_impl.dart';
+import '../data/repositories/mobile_data_large_upload_consent_repository_impl.dart';
 import '../data/repositories/transfer_repository_impl.dart';
 import '../domain/repositories/auth_repository.dart';
+import '../domain/repositories/mobile_data_large_upload_consent_repository.dart';
 import '../domain/repositories/transfer_repository.dart';
 import '../domain/usecases/create_user_usecase.dart';
 import '../domain/usecases/get_current_user_usecase.dart';
@@ -63,6 +65,9 @@ Future<void> configureDependencies() async {
 
   // Core
   sl.registerLazySingleton<NetworkInfo>(NetworkInfoImpl.new);
+  sl.registerLazySingleton<MobileDataLargeUploadConsentRepository>(
+    MobileDataLargeUploadConsentRepositoryImpl.new,
+  );
   sl.registerLazySingleton<Sha256Hasher>(() => const Sha256Hasher());
   sl.registerLazySingleton<SupabaseClientHandle>(
     SupabaseClientHandle.fromEnvironment,
@@ -150,7 +155,10 @@ Future<void> configureDependencies() async {
     () => CheckStorageAvailability(sl<TransferRepository>()),
   );
   sl.registerLazySingleton<EvaluateUploadPolicyUseCase>(
-    () => EvaluateUploadPolicyUseCase(sl<NetworkInfo>()),
+    () => EvaluateUploadPolicyUseCase(
+      sl<NetworkInfo>(),
+      sl<MobileDataLargeUploadConsentRepository>(),
+    ),
   );
   sl.registerLazySingleton<CheckTransferPermissionsUseCase>(
     () => CheckTransferPermissionsUseCase(sl<PermissionService>()),
@@ -212,6 +220,7 @@ Future<void> configureDependencies() async {
       prepareBatchUploadUi: sl<PrepareBatchUploadUiUseCase>(),
       validateTransferBatch: sl<ValidateTransferBatchUseCase>(),
       prepareIncomingTransfer: sl<PrepareIncomingTransferUseCase>(),
+      mobileDataLargeUploadConsent: sl<MobileDataLargeUploadConsentRepository>(),
     ),
   );
 }

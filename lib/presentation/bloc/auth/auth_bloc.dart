@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../domain/entities/user_entity.dart';
 import '../../../domain/usecases/create_user_usecase.dart';
 import '../../../domain/usecases/get_current_user_usecase.dart';
 import 'auth_event.dart';
@@ -22,7 +23,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   Future<void> _onStarted(AuthStarted event, Emitter<AuthState> emit) async {
     emit(state.copyWith(status: AuthStatus.loading, clearErrorMessage: true));
     try {
-      final user = await _getCurrentUser();
+      UserEntity? user = await _getCurrentUser();
+      user ??= await _createUser(
+        shortCode: '',
+        username: 'User',
+      );
       emit(
         state.copyWith(
           status: AuthStatus.success,

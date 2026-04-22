@@ -13,6 +13,7 @@ import 'package:tranzo/domain/entities/transfer_entity.dart';
 import 'package:tranzo/domain/entities/transfer_lifecycle_signal.dart';
 import 'package:tranzo/domain/entities/transfer_task.dart';
 import 'package:tranzo/domain/entities/user_entity.dart';
+import 'package:tranzo/domain/repositories/mobile_data_large_upload_consent_repository.dart';
 import 'package:tranzo/domain/repositories/transfer_repository.dart';
 import 'package:tranzo/domain/usecases/retry_transfer_usecase.dart';
 import 'package:tranzo/domain/usecases/send_files_usecase.dart';
@@ -31,6 +32,8 @@ import 'package:tranzo/presentation/pages/transfer_home_page.dart';
 void main() {
   testWidgets('Transfer home scaffold renders', (WidgetTester tester) async {
     final _FakeTransferRepository repository = _FakeTransferRepository();
+    final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+        _FakeMobileDataLargeUploadConsentRepository();
     final TransferBloc bloc = TransferBloc(
       startUpload: StartUploadUseCase(repository),
       startDownload: StartDownloadUseCase(repository),
@@ -38,7 +41,7 @@ void main() {
       cancelTransfer: CancelTransferUseCase(repository),
       sendFiles: SendFiles(repository),
       validateTransferBatch: ValidateTransferBatchUseCase(
-        EvaluateUploadPolicyUseCase(_FakeNetworkInfo()),
+        EvaluateUploadPolicyUseCase(_FakeNetworkInfo(), mobileDataConsent),
       ),
       prepareIncomingTransfer: PrepareIncomingTransferUseCase(
         checkTransferPermissions: CheckTransferPermissionsUseCase(
@@ -49,6 +52,7 @@ void main() {
       prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
         CheckTransferPermissionsUseCase(_FakePermissionService()),
       ),
+      mobileDataLargeUploadConsent: mobileDataConsent,
     );
 
     await tester.pumpWidget(
@@ -60,8 +64,26 @@ void main() {
       ),
     );
 
-    expect(find.text('Tranzo Transfer Home'), findsOneWidget);
+    expect(find.text('Tranzo'), findsOneWidget);
   });
+}
+
+class _FakeMobileDataLargeUploadConsentRepository
+    implements MobileDataLargeUploadConsentRepository {
+  _FakeMobileDataLargeUploadConsentRepository({bool initialConsented = false})
+    : _consented = initialConsented;
+
+  bool _consented;
+  int setUserConsentedCallCount = 0;
+
+  @override
+  Future<bool> hasUserConsented() async => _consented;
+
+  @override
+  Future<void> setUserConsented(bool value) async {
+    setUserConsentedCallCount++;
+    _consented = value;
+  }
 }
 
 class _FakeTransferRepository implements TransferRepository {

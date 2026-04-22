@@ -35,6 +35,10 @@ class ProfileScreen extends StatelessWidget {
                 children: <Widget>[
                   Card(
                     child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 6,
+                      ),
                       title: Text(user.username),
                       subtitle: Text('Short code: ${user.shortCode}'),
                       leading: const Icon(Icons.person_outline),
@@ -54,6 +58,7 @@ class ProfileScreen extends StatelessWidget {
                   else
                     ...state.interactions.map(
                       (interaction) => Card(
+                        margin: const EdgeInsets.only(bottom: 8),
                         child: ListTile(
                           leading: const Icon(Icons.swap_horiz),
                           title: Text(interaction.username),

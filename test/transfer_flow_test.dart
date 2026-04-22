@@ -12,6 +12,7 @@ import 'package:tranzo/domain/entities/transfer_entity.dart';
 import 'package:tranzo/domain/entities/transfer_lifecycle_signal.dart';
 import 'package:tranzo/domain/entities/transfer_task.dart';
 import 'package:tranzo/domain/entities/user_entity.dart';
+import 'package:tranzo/domain/repositories/mobile_data_large_upload_consent_repository.dart';
 import 'package:tranzo/domain/repositories/transfer_repository.dart';
 import 'package:tranzo/domain/usecases/retry_transfer_usecase.dart';
 import 'package:tranzo/domain/usecases/send_files_usecase.dart';
@@ -46,6 +47,8 @@ void main() {
   group('TransferBloc batch upload', () {
     test('emits per-file progress for batch stream', () async {
       final _FakeTransferRepository repository = _FakeTransferRepository();
+      final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+          _FakeMobileDataLargeUploadConsentRepository();
       final TransferBloc bloc = TransferBloc(
         startUpload: StartUploadUseCase(repository),
         startDownload: StartDownloadUseCase(repository),
@@ -53,7 +56,10 @@ void main() {
         cancelTransfer: CancelTransferUseCase(repository),
         sendFiles: SendFiles(repository),
         validateTransferBatch: ValidateTransferBatchUseCase(
-          EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: false)),
+          EvaluateUploadPolicyUseCase(
+            _FakeNetworkInfo(isMobile: false),
+            mobileDataConsent,
+          ),
         ),
         prepareIncomingTransfer: PrepareIncomingTransferUseCase(
           checkTransferPermissions: CheckTransferPermissionsUseCase(
@@ -64,6 +70,7 @@ void main() {
         prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
           CheckTransferPermissionsUseCase(_FakePermissionService()),
         ),
+        mobileDataLargeUploadConsent: mobileDataConsent,
       );
       final List<TransferState> states = <TransferState>[];
       final sub = bloc.stream.listen(states.add);
@@ -93,6 +100,8 @@ void main() {
 
     test('rejects file larger than 1GB', () async {
       final _FakeTransferRepository repository = _FakeTransferRepository();
+      final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+          _FakeMobileDataLargeUploadConsentRepository();
       final TransferBloc bloc = TransferBloc(
         startUpload: StartUploadUseCase(repository),
         startDownload: StartDownloadUseCase(repository),
@@ -100,7 +109,10 @@ void main() {
         cancelTransfer: CancelTransferUseCase(repository),
         sendFiles: SendFiles(repository),
         validateTransferBatch: ValidateTransferBatchUseCase(
-          EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: false)),
+          EvaluateUploadPolicyUseCase(
+            _FakeNetworkInfo(isMobile: false),
+            mobileDataConsent,
+          ),
         ),
         prepareIncomingTransfer: PrepareIncomingTransferUseCase(
           checkTransferPermissions: CheckTransferPermissionsUseCase(
@@ -111,6 +123,7 @@ void main() {
         prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
           CheckTransferPermissionsUseCase(_FakePermissionService()),
         ),
+        mobileDataLargeUploadConsent: mobileDataConsent,
       );
 
       bloc.add(
@@ -139,6 +152,8 @@ void main() {
       final _FakeTransferRepository repository = _FakeTransferRepository(
         throwOnAccept: true,
       );
+      final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+          _FakeMobileDataLargeUploadConsentRepository();
       final TransferBloc bloc = TransferBloc(
         startUpload: StartUploadUseCase(repository),
         startDownload: StartDownloadUseCase(repository),
@@ -146,7 +161,10 @@ void main() {
         cancelTransfer: CancelTransferUseCase(repository),
         sendFiles: SendFiles(repository),
         validateTransferBatch: ValidateTransferBatchUseCase(
-          EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: false)),
+          EvaluateUploadPolicyUseCase(
+            _FakeNetworkInfo(isMobile: false),
+            mobileDataConsent,
+          ),
         ),
         prepareIncomingTransfer: PrepareIncomingTransferUseCase(
           checkTransferPermissions: CheckTransferPermissionsUseCase(
@@ -159,6 +177,7 @@ void main() {
             _FakePermissionService(storageGranted: false),
           ),
         ),
+        mobileDataLargeUploadConsent: mobileDataConsent,
       );
 
       bloc.add(
@@ -187,6 +206,8 @@ void main() {
       'requires confirmation on mobile when batch total exceeds 50MB',
       () async {
         final _FakeTransferRepository repository = _FakeTransferRepository();
+        final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+            _FakeMobileDataLargeUploadConsentRepository();
         final TransferBloc bloc = TransferBloc(
           startUpload: StartUploadUseCase(repository),
           startDownload: StartDownloadUseCase(repository),
@@ -194,7 +215,10 @@ void main() {
           cancelTransfer: CancelTransferUseCase(repository),
           sendFiles: SendFiles(repository),
           validateTransferBatch: ValidateTransferBatchUseCase(
-            EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: true)),
+            EvaluateUploadPolicyUseCase(
+              _FakeNetworkInfo(isMobile: true),
+              mobileDataConsent,
+            ),
           ),
           prepareIncomingTransfer: PrepareIncomingTransferUseCase(
             checkTransferPermissions: CheckTransferPermissionsUseCase(
@@ -205,6 +229,7 @@ void main() {
           prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
             CheckTransferPermissionsUseCase(_FakePermissionService()),
           ),
+          mobileDataLargeUploadConsent: mobileDataConsent,
         );
 
         bloc.add(
@@ -232,6 +257,8 @@ void main() {
       'does not start upload when user declines mobile-data confirmation',
       () async {
         final _FakeTransferRepository repository = _FakeTransferRepository();
+        final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+            _FakeMobileDataLargeUploadConsentRepository();
         final TransferBloc bloc = TransferBloc(
           startUpload: StartUploadUseCase(repository),
           startDownload: StartDownloadUseCase(repository),
@@ -239,7 +266,10 @@ void main() {
           cancelTransfer: CancelTransferUseCase(repository),
           sendFiles: SendFiles(repository),
           validateTransferBatch: ValidateTransferBatchUseCase(
-            EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: true)),
+            EvaluateUploadPolicyUseCase(
+              _FakeNetworkInfo(isMobile: true),
+              mobileDataConsent,
+            ),
           ),
           prepareIncomingTransfer: PrepareIncomingTransferUseCase(
             checkTransferPermissions: CheckTransferPermissionsUseCase(
@@ -250,6 +280,7 @@ void main() {
           prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
             CheckTransferPermissionsUseCase(_FakePermissionService()),
           ),
+          mobileDataLargeUploadConsent: mobileDataConsent,
         );
 
         bloc.add(
@@ -279,6 +310,8 @@ void main() {
       'starts upload after user confirms mobile-data confirmation',
       () async {
         final _FakeTransferRepository repository = _FakeTransferRepository();
+        final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+            _FakeMobileDataLargeUploadConsentRepository();
         final TransferBloc bloc = TransferBloc(
           startUpload: StartUploadUseCase(repository),
           startDownload: StartDownloadUseCase(repository),
@@ -286,7 +319,10 @@ void main() {
           cancelTransfer: CancelTransferUseCase(repository),
           sendFiles: SendFiles(repository),
           validateTransferBatch: ValidateTransferBatchUseCase(
-            EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: true)),
+            EvaluateUploadPolicyUseCase(
+              _FakeNetworkInfo(isMobile: true),
+              mobileDataConsent,
+            ),
           ),
           prepareIncomingTransfer: PrepareIncomingTransferUseCase(
             checkTransferPermissions: CheckTransferPermissionsUseCase(
@@ -297,6 +333,7 @@ void main() {
           prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
             CheckTransferPermissionsUseCase(_FakePermissionService()),
           ),
+          mobileDataLargeUploadConsent: mobileDataConsent,
         );
 
         bloc.add(
@@ -318,6 +355,63 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         expect(repository.sendBatchCallCount, 1);
+        expect(mobileDataConsent.setUserConsentedCallCount, 1);
+        expect(mobileDataConsent.consented, isTrue);
+        expect(bloc.state.status, TransferStatus.success);
+        await bloc.close();
+      },
+    );
+
+    test(
+      'skips mobile-data confirmation when user has previously consented',
+      () async {
+        final _FakeTransferRepository repository = _FakeTransferRepository();
+        final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+            _FakeMobileDataLargeUploadConsentRepository(
+              initialConsented: true,
+            );
+        final TransferBloc bloc = TransferBloc(
+          startUpload: StartUploadUseCase(repository),
+          startDownload: StartDownloadUseCase(repository),
+          retryTransfer: RetryTransferUseCase(repository),
+          cancelTransfer: CancelTransferUseCase(repository),
+          sendFiles: SendFiles(repository),
+          validateTransferBatch: ValidateTransferBatchUseCase(
+            EvaluateUploadPolicyUseCase(
+              _FakeNetworkInfo(isMobile: true),
+              mobileDataConsent,
+            ),
+          ),
+          prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+            checkTransferPermissions: CheckTransferPermissionsUseCase(
+              _FakePermissionService(),
+            ),
+            checkStorageAvailability: CheckStorageAvailability(repository),
+          ),
+          prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+            CheckTransferPermissionsUseCase(_FakePermissionService()),
+          ),
+          mobileDataLargeUploadConsent: mobileDataConsent,
+        );
+
+        bloc.add(
+          TransferBatchUploadRequested(
+            senderId: 'sender_1',
+            recipientCode: 'ABC123',
+            files: const <SelectedTransferFile>[
+              SelectedTransferFile(
+                id: 'f1',
+                fileName: 'movie.mp4',
+                localPath: '/tmp/movie.mp4',
+                sizeBytes: 55 * 1024 * 1024,
+              ),
+            ],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(bloc.state.pendingUploadConfirmation, isNull);
+        expect(repository.sendBatchCallCount, 1);
         expect(bloc.state.status, TransferStatus.success);
         await bloc.close();
       },
@@ -327,6 +421,8 @@ void main() {
       'continues incoming transfer when storage permission denied',
       () async {
         final _FakeTransferRepository repository = _FakeTransferRepository();
+        final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+            _FakeMobileDataLargeUploadConsentRepository();
         final TransferBloc bloc = TransferBloc(
           startUpload: StartUploadUseCase(repository),
           startDownload: StartDownloadUseCase(repository),
@@ -334,7 +430,10 @@ void main() {
           cancelTransfer: CancelTransferUseCase(repository),
           sendFiles: SendFiles(repository),
           validateTransferBatch: ValidateTransferBatchUseCase(
-            EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: false)),
+            EvaluateUploadPolicyUseCase(
+              _FakeNetworkInfo(isMobile: false),
+              mobileDataConsent,
+            ),
           ),
           prepareIncomingTransfer: PrepareIncomingTransferUseCase(
             checkTransferPermissions: CheckTransferPermissionsUseCase(
@@ -347,6 +446,7 @@ void main() {
               _FakePermissionService(storageGranted: false),
             ),
           ),
+          mobileDataLargeUploadConsent: mobileDataConsent,
         );
 
         bloc.add(
@@ -376,6 +476,8 @@ void main() {
       'shows in-app progress fallback when notification permission denied',
       () async {
         final _FakeTransferRepository repository = _FakeTransferRepository();
+        final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+            _FakeMobileDataLargeUploadConsentRepository();
         final TransferBloc bloc = TransferBloc(
           startUpload: StartUploadUseCase(repository),
           startDownload: StartDownloadUseCase(repository),
@@ -383,7 +485,10 @@ void main() {
           cancelTransfer: CancelTransferUseCase(repository),
           sendFiles: SendFiles(repository),
           validateTransferBatch: ValidateTransferBatchUseCase(
-            EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: false)),
+            EvaluateUploadPolicyUseCase(
+              _FakeNetworkInfo(isMobile: false),
+              mobileDataConsent,
+            ),
           ),
           prepareIncomingTransfer: PrepareIncomingTransferUseCase(
             checkTransferPermissions: CheckTransferPermissionsUseCase(
@@ -396,6 +501,7 @@ void main() {
               _FakePermissionService(notificationGranted: false),
             ),
           ),
+          mobileDataLargeUploadConsent: mobileDataConsent,
         );
 
         bloc.add(
@@ -425,6 +531,8 @@ void main() {
 
     test('stores remote lifecycle signal as reconciliation hint', () async {
       final _FakeTransferRepository repository = _FakeTransferRepository();
+      final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+          _FakeMobileDataLargeUploadConsentRepository();
       final TransferBloc bloc = TransferBloc(
         startUpload: StartUploadUseCase(repository),
         startDownload: StartDownloadUseCase(repository),
@@ -432,7 +540,10 @@ void main() {
         cancelTransfer: CancelTransferUseCase(repository),
         sendFiles: SendFiles(repository),
         validateTransferBatch: ValidateTransferBatchUseCase(
-          EvaluateUploadPolicyUseCase(_FakeNetworkInfo(isMobile: false)),
+          EvaluateUploadPolicyUseCase(
+            _FakeNetworkInfo(isMobile: false),
+            mobileDataConsent,
+          ),
         ),
         prepareIncomingTransfer: PrepareIncomingTransferUseCase(
           checkTransferPermissions: CheckTransferPermissionsUseCase(
@@ -443,6 +554,7 @@ void main() {
         prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
           CheckTransferPermissionsUseCase(_FakePermissionService()),
         ),
+        mobileDataLargeUploadConsent: mobileDataConsent,
       );
 
       bloc.add(
@@ -465,6 +577,26 @@ void main() {
       await bloc.close();
     });
   });
+}
+
+class _FakeMobileDataLargeUploadConsentRepository
+    implements MobileDataLargeUploadConsentRepository {
+  _FakeMobileDataLargeUploadConsentRepository({bool initialConsented = false})
+    : _consented = initialConsented;
+
+  bool _consented;
+  int setUserConsentedCallCount = 0;
+
+  bool get consented => _consented;
+
+  @override
+  Future<bool> hasUserConsented() async => _consented;
+
+  @override
+  Future<void> setUserConsented(bool value) async {
+    setUserConsentedCallCount++;
+    _consented = value;
+  }
 }
 
 class _FakeTransferRepository implements TransferRepository {

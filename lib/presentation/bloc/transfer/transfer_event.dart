@@ -71,6 +71,37 @@ class TransferBatchUploadCancelled extends TransferEvent {
   const TransferBatchUploadCancelled();
 }
 
+class TransferUploadDraftFilesAppended extends TransferEvent {
+  const TransferUploadDraftFilesAppended(this.picked);
+
+  final List<SelectedTransferFile> picked;
+
+  @override
+  List<Object?> get props => <Object?>[picked];
+}
+
+class TransferUploadDraftFileRemoved extends TransferEvent {
+  const TransferUploadDraftFileRemoved(this.localPath);
+
+  final String localPath;
+
+  @override
+  List<Object?> get props => <Object?>[localPath];
+}
+
+class TransferUploadDraftPickerBusy extends TransferEvent {
+  const TransferUploadDraftPickerBusy(this.busy);
+
+  final bool busy;
+
+  @override
+  List<Object?> get props => <Object?>[busy];
+}
+
+class TransferUploadDraftSelectionNoticeConsumed extends TransferEvent {
+  const TransferUploadDraftSelectionNoticeConsumed();
+}
+
 class TransferUiEffectConsumed extends TransferEvent {
   const TransferUiEffectConsumed();
 }
