@@ -14,6 +14,7 @@ class TransferService {
   static const String _transferSessionsTable = 'transfer_sessions';
   static const String _recipientCodesTable = 'recipient_codes';
   static const String _chunksBucket = 'transfer-chunks';
+  static const String _insufficientRecipientCodePermissionCode = '42501';
 
   /// Inserts a session row and returns the persisted record from PostgREST.
   Future<TransferSessionRecord> createTransferSession(
@@ -54,6 +55,12 @@ class TransferService {
           .maybeSingle();
       return row?['user_id'] as String?;
     } on PostgrestException catch (e) {
+      if (e.code == _insufficientRecipientCodePermissionCode) {
+        throw const AppException(
+          'Cloud pairing is unavailable for this session. Reopen the app and try again.',
+          code: AppErrorCode.invalidRecipientCode,
+        );
+      }
       throw AppException(e.message);
     }
   }

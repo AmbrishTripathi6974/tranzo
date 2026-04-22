@@ -24,6 +24,7 @@ final class AuthService {
   static const Duration _sessionRecoveryDelay = Duration(milliseconds: 150);
   static const Duration _dbRequestTimeout = Duration(seconds: 5);
   static const Duration _authRequestTimeout = Duration(seconds: 5);
+  static const String _insufficientRecipientCodePermissionCode = '42501';
   static const String _deviceAuthEmailKey = 'tranzo.device_auth.email';
   static const String _deviceAuthPasswordKey = 'tranzo.device_auth.password';
   static const String _recipientCodeKey = 'tranzo.identity.recipient_code';
@@ -253,12 +254,22 @@ final class AuthService {
     if (normalized.isEmpty) {
       throw const AppException('Recipient code is empty.');
     }
-
-    final Map<String, dynamic>? row = await _client
-        .from(_recipientCodesTable)
-        .select('user_id, short_code')
-        .eq('short_code', normalized)
-        .maybeSingle();
+    final Map<String, dynamic>? row;
+    try {
+      row = await _client
+          .from(_recipientCodesTable)
+          .select('user_id, short_code')
+          .eq('short_code', normalized)
+          .maybeSingle();
+    } on PostgrestException catch (e) {
+      if (e.code == _insufficientRecipientCodePermissionCode) {
+        throw const AppException(
+          'Cloud pairing is unavailable for this session. Reopen the app and try again.',
+          code: AppErrorCode.invalidRecipientCode,
+        );
+      }
+      throw AppException(e.message);
+    }
 
     if (row == null) {
       return null;
