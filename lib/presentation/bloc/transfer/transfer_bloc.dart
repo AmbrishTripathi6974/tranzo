@@ -28,7 +28,8 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     required PrepareBatchUploadUiUseCase prepareBatchUploadUi,
     required ValidateTransferBatchUseCase validateTransferBatch,
     required PrepareIncomingTransferUseCase prepareIncomingTransfer,
-    required MobileDataLargeUploadConsentRepository mobileDataLargeUploadConsent,
+    required MobileDataLargeUploadConsentRepository
+    mobileDataLargeUploadConsent,
   }) : _startUpload = startUpload,
        _startDownload = startDownload,
        _retryTransfer = retryTransfer,
@@ -59,6 +60,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     on<TransferUploadDraftSelectionNoticeConsumed>(
       _onUploadDraftSelectionNoticeConsumed,
     );
+    on<TransferUploadRecipientDraftChanged>(_onUploadRecipientDraftChanged);
   }
 
   final StartUploadUseCase _startUpload;
@@ -235,7 +237,8 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     final List<SelectedTransferFile> picked = event.picked;
     final int countBefore = state.selectedUploadFiles.length;
     final Set<String> seenPaths = <String>{
-      for (final SelectedTransferFile f in state.selectedUploadFiles) f.localPath,
+      for (final SelectedTransferFile f in state.selectedUploadFiles)
+        f.localPath,
     };
     final List<SelectedTransferFile> merged = List<SelectedTransferFile>.from(
       state.selectedUploadFiles,
@@ -245,8 +248,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
         merged.add(file);
       }
     }
-    final bool duplicate =
-        picked.isNotEmpty && merged.length == countBefore;
+    final bool duplicate = picked.isNotEmpty && merged.length == countBefore;
     emit(
       state.copyWith(
         selectedUploadFiles: merged,
@@ -284,6 +286,13 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     Emitter<TransferState> emit,
   ) {
     emit(state.copyWith(clearUploadDraftSelectionNotice: true));
+  }
+
+  void _onUploadRecipientDraftChanged(
+    TransferUploadRecipientDraftChanged event,
+    Emitter<TransferState> emit,
+  ) {
+    emit(state.copyWith(uploadRecipientCodeDraft: event.draft));
   }
 
   Future<void> _startBatchUpload(
@@ -336,6 +345,9 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
                 ? const <SelectedTransferFile>[]
                 : state.selectedUploadFiles,
             clearUploadDraftSelectionNotice: total >= 1,
+            uploadRecipientCodeDraft: total >= 1
+                ? ''
+                : state.uploadRecipientCodeDraft,
           );
         },
       );

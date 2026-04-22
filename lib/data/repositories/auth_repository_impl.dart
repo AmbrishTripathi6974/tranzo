@@ -16,6 +16,22 @@ class AuthRepositoryImpl implements AuthRepository {
   final AuthService _authService;
   final Isar _isar;
 
+  /// [Supabase.initialize] starts [recoverSession] without awaiting it; a
+  /// short retry window avoids null profile loads right after cold start.
+  Future<UserSessionSnapshot?> _loadSessionSnapshotWithRetry() async {
+    for (var attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 160));
+      }
+      final UserSessionSnapshot? snapshot =
+          await _authService.loadCurrentSessionProfile();
+      if (snapshot != null) {
+        return snapshot;
+      }
+    }
+    return null;
+  }
+
   @override
   Future<UserEntity> createUser({
     required String shortCode,
@@ -47,11 +63,32 @@ class AuthRepositoryImpl implements AuthRepository {
         .where()
         .findFirst();
     if (cached != null) {
-      return _entityFromCollection(cached);
+      final UserEntity fromCache = _entityFromCollection(cached);
+      if (fromCache.shortCode.isNotEmpty) {
+        return fromCache;
+      }
+      final UserSessionSnapshot? snapshot =
+          await _loadSessionSnapshotWithRetry();
+      if (snapshot != null &&
+          snapshot.userId == cached.supabaseUserId &&
+          snapshot.shortCode.isNotEmpty) {
+        await _isar.writeTxn(() async {
+          cached.shortCode = snapshot.shortCode;
+          cached.displayName = snapshot.username;
+          cached.updatedAt = DateTime.now();
+          await _isar.userCollections.put(cached);
+        });
+        return UserEntity(
+          id: snapshot.userId,
+          shortCode: snapshot.shortCode,
+          username: snapshot.username,
+        );
+      }
+      return fromCache;
     }
 
     final UserSessionSnapshot? snapshot =
-        await _authService.loadCurrentSessionProfile();
+        await _loadSessionSnapshotWithRetry();
     if (snapshot == null) {
       return null;
     }

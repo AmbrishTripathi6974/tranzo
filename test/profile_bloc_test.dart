@@ -45,7 +45,64 @@ void main() {
       expect(bloc.state.interactions.length, 1);
       await bloc.close();
     });
+
+    test('second ProfileRequested can surface updated recipient short code', () async {
+      final _SequentialAuthRepository authRepository =
+          _SequentialAuthRepository(
+            users: <UserEntity?>[
+              const UserEntity(id: 'u1', shortCode: '', username: 'Alice'),
+              const UserEntity(id: 'u1', shortCode: 'XY12AB', username: 'Alice'),
+            ],
+          );
+      final _FakeTransferRepository transferRepository =
+          _FakeTransferRepository(interactions: <ProfileInteractionEntity>[]);
+
+      final ProfileBloc bloc = ProfileBloc(
+        getUserProfile: GetUserProfile(authRepository),
+        getUserInteractions: GetUserInteractions(transferRepository),
+      );
+
+      bloc.add(const ProfileRequested());
+      await bloc.stream.firstWhere(
+        (ProfileState s) =>
+            s.status == ProfileStatus.success && s.user?.shortCode == '',
+      );
+
+      bloc.add(const ProfileRequested());
+      await bloc.stream.firstWhere(
+        (ProfileState s) =>
+            s.status == ProfileStatus.success && s.user?.shortCode == 'XY12AB',
+      );
+
+      expect(bloc.state.user?.shortCode, 'XY12AB');
+      await bloc.close();
+    });
   });
+}
+
+class _SequentialAuthRepository implements AuthRepository {
+  _SequentialAuthRepository({required List<UserEntity?> users}) : _users = users;
+
+  final List<UserEntity?> _users;
+  int _call = 0;
+
+  @override
+  Future<UserEntity> createUser({
+    required String shortCode,
+    required String username,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<UserEntity?> getCurrentUser() async {
+    if (_users.isEmpty) {
+      return null;
+    }
+    final int index = _call < _users.length ? _call : _users.length - 1;
+    _call++;
+    return _users[index];
+  }
 }
 
 class _FakeAuthRepository implements AuthRepository {

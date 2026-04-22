@@ -98,6 +98,15 @@ class TransferUploadDraftPickerBusy extends TransferEvent {
   List<Object?> get props => <Object?>[busy];
 }
 
+class TransferUploadRecipientDraftChanged extends TransferEvent {
+  const TransferUploadRecipientDraftChanged(this.draft);
+
+  final String draft;
+
+  @override
+  List<Object?> get props => <Object?>[draft];
+}
+
 class TransferUploadDraftSelectionNoticeConsumed extends TransferEvent {
   const TransferUploadDraftSelectionNoticeConsumed();
 }

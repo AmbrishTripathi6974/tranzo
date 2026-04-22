@@ -35,8 +35,10 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
           state.copyWith(
             status: ProfileStatus.error,
             errorMessage:
-                'User profile is not ready yet. Check your connection and try '
-                'again in a moment.',
+                'User profile is not ready yet. Check your connection, wait for '
+                'sign-in to finish, then tap Retry. If it keeps failing, confirm '
+                'your Supabase project has a recipient_codes row for this user '
+                'and RLS allows reads.',
           ),
         );
         return;

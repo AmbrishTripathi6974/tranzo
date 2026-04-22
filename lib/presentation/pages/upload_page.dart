@@ -17,10 +17,7 @@ class UploadPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Send'),
-        centerTitle: false,
-      ),
+      appBar: AppBar(title: const Text('Send'), centerTitle: false),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -45,6 +42,21 @@ class _UploadFormState extends State<_UploadForm> {
   void initState() {
     super.initState();
     _recipientController = TextEditingController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final String draft = context
+          .read<TransferBloc>()
+          .state
+          .uploadRecipientCodeDraft;
+      if (_recipientController.text != draft) {
+        _recipientController.value = TextEditingValue(
+          text: draft,
+          selection: TextSelection.collapsed(offset: draft.length),
+        );
+      }
+    });
   }
 
   @override
@@ -151,236 +163,266 @@ class _UploadFormState extends State<_UploadForm> {
               : const TransferBatchUploadCancelled(),
         );
       },
-      child: BlocBuilder<TransferBloc, TransferState>(
-        builder: (BuildContext context, TransferState transferState) {
-          final List<SelectedTransferFile> selected =
-              transferState.selectedUploadFiles;
-          final bool draftLocked =
-              transferState.pendingUploadConfirmation != null;
-          final bool pickerBusy = transferState.uploadDraftPickerBusy;
-          final bool canEditSelection =
-              transferState.status != TransferStatus.loading && !draftLocked;
-          final bool canPick = canEditSelection && !pickerBusy;
-          final bool canSend = canEditSelection &&
-              selected.isNotEmpty &&
-              _recipientController.text.trim().isNotEmpty;
+      child: BlocListener<TransferBloc, TransferState>(
+        listenWhen: (TransferState previous, TransferState current) =>
+            previous.uploadRecipientCodeDraft !=
+            current.uploadRecipientCodeDraft,
+        listener: (BuildContext context, TransferState state) {
+          if (_recipientController.text != state.uploadRecipientCodeDraft) {
+            final String text = state.uploadRecipientCodeDraft;
+            _recipientController.value = TextEditingValue(
+              text: text,
+              selection: TextSelection.collapsed(offset: text.length),
+            );
+          }
+        },
+        child: BlocBuilder<TransferBloc, TransferState>(
+          builder: (BuildContext context, TransferState transferState) {
+            final List<SelectedTransferFile> selected =
+                transferState.selectedUploadFiles;
+            final bool draftLocked =
+                transferState.pendingUploadConfirmation != null;
+            final bool pickerBusy = transferState.uploadDraftPickerBusy;
+            final bool canEditSelection =
+                transferState.status != TransferStatus.loading && !draftLocked;
+            final bool canPick = canEditSelection && !pickerBusy;
+            final bool canSend =
+                canEditSelection &&
+                selected.isNotEmpty &&
+                transferState.uploadRecipientCodeDraft.trim().isNotEmpty;
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Card(
-                clipBehavior: Clip.antiAlias,
-                elevation: 0,
-                color: theme.colorScheme.surfaceContainerLow,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: <Color>[
-                            theme.colorScheme.primaryContainer.withValues(
-                              alpha: 0.55,
-                            ),
-                            theme.colorScheme.surfaceContainerLow,
-                          ],
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Card(
+                  clipBehavior: Clip.antiAlias,
+                  elevation: 0,
+                  color: theme.colorScheme.surfaceContainerLow,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: <Color>[
+                              theme.colorScheme.primaryContainer.withValues(
+                                alpha: 0.55,
+                              ),
+                              theme.colorScheme.surfaceContainerLow,
+                            ],
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              CircleAvatar(
+                                radius: 26,
+                                backgroundColor: theme.colorScheme.primary,
+                                child: Icon(
+                                  Icons.outbound_rounded,
+                                  size: 28,
+                                  color: theme.colorScheme.onPrimary,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Text(
+                                      'Send a transfer',
+                                      style: theme.textTheme.titleLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: -0.2,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Add files, confirm the recipient, then '
+                                      'start the upload.',
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                        child: TextField(
+                          controller: _recipientController,
+                          onChanged: (String value) {
+                            context.read<TransferBloc>().add(
+                              TransferUploadRecipientDraftChanged(value),
+                            );
+                          },
+                          textCapitalization: TextCapitalization.characters,
+                          decoration: InputDecoration(
+                            labelText: 'Recipient code',
+                            hintText: 'e.g. ABC123',
+                            filled: true,
+                            prefixIcon: const Icon(Icons.tag_rounded),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: <Widget>[
-                            CircleAvatar(
-                              radius: 26,
-                              backgroundColor: theme.colorScheme.primary,
-                              child: Icon(
-                                Icons.outbound_rounded,
-                                size: 28,
-                                color: theme.colorScheme.onPrimary,
+                            OutlinedButton.icon(
+                              onPressed: canPick
+                                  ? () => _pickFiles(context)
+                                  : null,
+                              icon: const Icon(Icons.add_rounded),
+                              label: const Text('Add files'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: <Widget>[
-                                  Text(
-                                    'Send a transfer',
-                                    style: theme.textTheme.titleLarge?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: -0.2,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Add files, confirm the recipient, then '
-                                    'start the upload.',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme
-                                          .colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
+                            const SizedBox(height: 10),
+                            FilledButton.icon(
+                              onPressed: canSend
+                                  ? () => _startUpload(context, transferState)
+                                  : null,
+                              icon: const Icon(Icons.cloud_upload_rounded),
+                              label: const Text('Start transfer'),
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                      child: TextField(
-                        controller: _recipientController,
-                        onChanged: (_) => setState(() {}),
-                        textCapitalization: TextCapitalization.characters,
-                        decoration: InputDecoration(
-                          labelText: 'Recipient code',
-                          hintText: 'e.g. ABC123',
-                          filled: true,
-                          prefixIcon: const Icon(Icons.tag_rounded),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                    ],
+                  ),
+                ),
+                if (transferState.errorMessage != null) ...<Widget>[
+                  const SizedBox(height: 10),
+                  Material(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          OutlinedButton.icon(
-                            onPressed: canPick ? () => _pickFiles(context) : null,
-                            icon: const Icon(Icons.add_rounded),
-                            label: const Text('Add files'),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
+                          Icon(
+                            Icons.error_outline_rounded,
+                            color: theme.colorScheme.onErrorContainer,
                           ),
-                          const SizedBox(height: 10),
-                          FilledButton.icon(
-                            onPressed: canSend
-                                ? () => _startUpload(context, transferState)
-                                : null,
-                            icon: const Icon(Icons.cloud_upload_rounded),
-                            label: const Text('Start transfer'),
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              transferState.errorMessage!,
+                              style: TextStyle(
+                                color: theme.colorScheme.onErrorContainer,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-              if (transferState.errorMessage != null) ...<Widget>[
-                const SizedBox(height: 10),
-                Material(
-                  color: theme.colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(14),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Icon(
-                          Icons.error_outline_rounded,
-                          color: theme.colorScheme.onErrorContainer,
+                  ),
+                ],
+                if (transferState.showInAppProgress) ...<Widget>[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      minHeight: 6,
+                      value: transferState.progress >= 1
+                          ? null
+                          : transferState.progress,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                Row(
+                  children: <Widget>[
+                    Text(
+                      'Files',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (selected.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            transferState.errorMessage!,
-                            style: TextStyle(
-                              color: theme.colorScheme.onErrorContainer,
-                            ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${selected.length}',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.onSecondaryContainer,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-              if (transferState.showInAppProgress) ...<Widget>[
-                const SizedBox(height: 12),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: LinearProgressIndicator(
-                    minHeight: 6,
-                    value: transferState.progress >= 1
-                        ? null
-                        : transferState.progress,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 14),
-              Row(
-                children: <Widget>[
-                  Text(
-                    'Files',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (selected.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
                       ),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        '${selected.length}',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.onSecondaryContainer,
-                          fontWeight: FontWeight.w600,
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: selected.isEmpty
+                      ? _UploadEmptyState(theme: theme)
+                      : ListView.separated(
+                          itemCount: selected.length,
+                          separatorBuilder: (BuildContext context, int index) =>
+                              const SizedBox(height: 8),
+                          itemBuilder: (BuildContext context, int index) {
+                            final SelectedTransferFile file = selected[index];
+                            final TransferFileProgress? progress =
+                                transferState.batchProgressByFileId[file.id];
+                            return _TransferFileRow(
+                              file: file,
+                              progress: progress,
+                              canRemove: canEditSelection,
+                              onRemove: () {
+                                context.read<TransferBloc>().add(
+                                  TransferUploadDraftFileRemoved(
+                                    file.localPath,
+                                  ),
+                                );
+                              },
+                            );
+                          },
                         ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Expanded(
-                child: selected.isEmpty
-                    ? _UploadEmptyState(theme: theme)
-                    : ListView.separated(
-                        itemCount: selected.length,
-                        separatorBuilder: (BuildContext context, int index) =>
-                            const SizedBox(height: 8),
-                        itemBuilder: (BuildContext context, int index) {
-                          final SelectedTransferFile file = selected[index];
-                          final TransferFileProgress? progress =
-                              transferState.batchProgressByFileId[file.id];
-                          return _TransferFileRow(
-                            file: file,
-                            progress: progress,
-                            canRemove: canEditSelection,
-                            onRemove: () {
-                              context.read<TransferBloc>().add(
-                                TransferUploadDraftFileRemoved(file.localPath),
-                              );
-                            },
-                          );
-                        },
-                      ),
-              ),
-            ],
-          );
-        },
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -405,18 +447,17 @@ class _UploadFormState extends State<_UploadForm> {
       if (result == null || !context.mounted) {
         return;
       }
-      final List<SelectedTransferFile> picked =
-          result.files
-              .where((PlatformFile file) => file.path != null)
-              .map(
-                (PlatformFile file) => SelectedTransferFile(
-                  id: file.identifier ?? '${file.name}_${file.size}',
-                  fileName: file.name,
-                  localPath: file.path!,
-                  sizeBytes: file.size,
-                ),
-              )
-              .toList(growable: false);
+      final List<SelectedTransferFile> picked = result.files
+          .where((PlatformFile file) => file.path != null)
+          .map(
+            (PlatformFile file) => SelectedTransferFile(
+              id: file.identifier ?? '${file.name}_${file.size}',
+              fileName: file.name,
+              localPath: file.path!,
+              sizeBytes: file.size,
+            ),
+          )
+          .toList(growable: false);
       if (picked.isEmpty) {
         return;
       }
@@ -440,7 +481,7 @@ class _UploadFormState extends State<_UploadForm> {
     context.read<TransferBloc>().add(
       TransferBatchUploadRequested(
         senderId: profileState.user!.id,
-        recipientCode: _recipientController.text.trim(),
+        recipientCode: transferState.uploadRecipientCodeDraft.trim(),
         files: transferState.selectedUploadFiles,
       ),
     );

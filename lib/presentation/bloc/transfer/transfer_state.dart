@@ -46,6 +46,7 @@ class TransferState extends Equatable {
     this.selectedUploadFiles = const <SelectedTransferFile>[],
     this.uploadDraftPickerBusy = false,
     this.uploadDraftSelectionNotice,
+    this.uploadRecipientCodeDraft = '',
   });
 
   final TransferStatus status;
@@ -62,6 +63,7 @@ class TransferState extends Equatable {
   final List<SelectedTransferFile> selectedUploadFiles;
   final bool uploadDraftPickerBusy;
   final String? uploadDraftSelectionNotice;
+  final String uploadRecipientCodeDraft;
 
   TransferState copyWith({
     TransferStatus? status,
@@ -78,6 +80,7 @@ class TransferState extends Equatable {
     List<SelectedTransferFile>? selectedUploadFiles,
     bool? uploadDraftPickerBusy,
     String? uploadDraftSelectionNotice,
+    String? uploadRecipientCodeDraft,
     bool clearActiveTransferId = false,
     bool clearErrorMessage = false,
     bool clearBatchProgress = false,
@@ -116,6 +119,8 @@ class TransferState extends Equatable {
       uploadDraftSelectionNotice: clearUploadDraftSelectionNotice
           ? null
           : (uploadDraftSelectionNotice ?? this.uploadDraftSelectionNotice),
+      uploadRecipientCodeDraft:
+          uploadRecipientCodeDraft ?? this.uploadRecipientCodeDraft,
     );
   }
 
@@ -135,5 +140,6 @@ class TransferState extends Equatable {
     selectedUploadFiles,
     uploadDraftPickerBusy,
     uploadDraftSelectionNotice,
+    uploadRecipientCodeDraft,
   ];
 }
