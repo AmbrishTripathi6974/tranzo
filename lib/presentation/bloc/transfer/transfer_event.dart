@@ -152,12 +152,13 @@ class IncomingTransferReceived extends TransferEvent {
 }
 
 class IncomingTransferAccepted extends TransferEvent {
-  const IncomingTransferAccepted(this.transfer);
+  const IncomingTransferAccepted(this.transfer, {this.trustSender = false});
 
   final IncomingTransferOffer transfer;
+  final bool trustSender;
 
   @override
-  List<Object?> get props => <Object?>[transfer];
+  List<Object?> get props => <Object?>[transfer, trustSender];
 }
 
 class IncomingTransferRejected extends TransferEvent {

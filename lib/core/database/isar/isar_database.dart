@@ -3,6 +3,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'collections/file_collection.dart';
 import 'collections/queued_transfer_collection.dart';
+import 'collections/sender_trust_collection.dart';
 import 'collections/transfer_collection.dart';
 import 'collections/transfer_progress_collection.dart';
 import 'collections/user_collection.dart';
@@ -19,6 +20,7 @@ Future<Isar> openTranzoIsar() async {
       FileCollectionSchema,
       TransferProgressCollectionSchema,
       QueuedTransferCollectionSchema,
+      SenderTrustCollectionSchema,
     ],
     directory: dir.path,
     name: _isarName,

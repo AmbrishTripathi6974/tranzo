@@ -205,6 +205,7 @@ class _FakeTransferRepository implements TransferRepository {
   Future<void> acceptIncomingTransfer({
     required IncomingTransferOffer transfer,
     bool persistPermanently = true,
+    bool trustSender = false,
   }) async {}
 
   @override

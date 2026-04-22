@@ -49,10 +49,12 @@ class SendFiles {
   Future<void> acceptIncoming({
     required IncomingTransferOffer transfer,
     bool persistPermanently = true,
+    bool trustSender = false,
   }) {
     return _repository.acceptIncomingTransfer(
       transfer: transfer,
       persistPermanently: persistPermanently,
+      trustSender: trustSender,
     );
   }
 

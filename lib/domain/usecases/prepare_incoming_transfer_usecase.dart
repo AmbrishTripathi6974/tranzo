@@ -33,7 +33,7 @@ class PrepareIncomingTransferUseCase {
     final bool hasStorage = await _checkStorageAvailability(transfer.fileSize);
     if (!hasStorage) {
       throw const AppException(
-        'Not enough storage space to receive this file.',
+        'Insufficient storage. Free up space to receive this file.',
         code: AppErrorCode.insufficientStorage,
       );
     }

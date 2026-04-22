@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../core/services/storage_service.dart';
+import '../../../di/injection_container.dart';
 import '../../bloc/auth/auth_bloc.dart';
 import '../../bloc/auth/auth_state.dart';
 import '../../bloc/profile/profile_bloc.dart';
@@ -16,11 +18,17 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _didAutoRetryFromError = false;
+  late final Future<LocalStorageSnapshot?> _storageSnapshotFuture;
 
   @override
   void initState() {
     super.initState();
+    _storageSnapshotFuture = _loadStorageSnapshot();
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeRequestProfile());
+  }
+
+  Future<LocalStorageSnapshot?> _loadStorageSnapshot() {
+    return sl<StorageService>().getLocalStorageSnapshot();
   }
 
   void _maybeRequestProfile() {
@@ -190,6 +198,81 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ),
                               ),
                             ),
+                            const SizedBox(height: 12),
+                            FutureBuilder<LocalStorageSnapshot?>(
+                              future: _storageSnapshotFuture,
+                              builder:
+                                  (
+                                    BuildContext context,
+                                    AsyncSnapshot<LocalStorageSnapshot?>
+                                    snapshot,
+                                  ) {
+                                    if (snapshot.connectionState ==
+                                        ConnectionState.waiting) {
+                                      return const Card(
+                                        child: ListTile(
+                                          leading: Icon(Icons.storage_outlined),
+                                          title: Text('Local Storage'),
+                                          subtitle: Text(
+                                            'Checking available space...',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    if (snapshot.hasError ||
+                                        snapshot.data == null) {
+                                      return const Card(
+                                        child: ListTile(
+                                          leading: Icon(Icons.storage_outlined),
+                                          title: Text('Local Storage'),
+                                          subtitle: Text(
+                                            'Could not load storage information.',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    final LocalStorageSnapshot storage =
+                                        snapshot.data!;
+                                    return Card(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: <Widget>[
+                                            Text(
+                                              'Local Storage',
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.titleMedium,
+                                            ),
+                                            const SizedBox(height: 10),
+                                            _StorageInfoLine(
+                                              label: 'Used',
+                                              value: _formatBytes(
+                                                storage.usedBytes,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            _StorageInfoLine(
+                                              label: 'Free',
+                                              value: _formatBytes(
+                                                storage.freeBytes,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            _StorageInfoLine(
+                                              label: 'Total',
+                                              value: _formatBytes(
+                                                storage.totalBytes,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                            ),
                             const SizedBox(height: 20),
                             Text(
                               'Recent Interactions',
@@ -255,4 +338,45 @@ class _MessageState extends StatelessWidget {
       ),
     );
   }
+}
+
+class _StorageInfoLine extends StatelessWidget {
+  const _StorageInfoLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+        ),
+        Text(
+          value,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+}
+
+String _formatBytes(int bytes) {
+  if (bytes <= 0) {
+    return '0 B';
+  }
+  const List<String> units = <String>['B', 'KB', 'MB', 'GB', 'TB'];
+  double value = bytes.toDouble();
+  int unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  final String display = value >= 10 || unitIndex == 0
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
+  return '$display ${units[unitIndex]}';
 }

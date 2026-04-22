@@ -5,6 +5,7 @@ enum TransferLifecycleEventType {
   transferAccepted,
   transferCompleted,
   transferFailed,
+  transferRejected,
 }
 
 class TransferLifecycleSignalEntity extends Equatable {

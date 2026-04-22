@@ -7,7 +7,8 @@ enum TransferLifecycleEvent {
   transferStarted('transfer_started'),
   transferAccepted('transfer_accepted'),
   transferCompleted('transfer_completed'),
-  transferFailed('transfer_failed');
+  transferFailed('transfer_failed'),
+  transferRejected('transfer_rejected');
 
   const TransferLifecycleEvent(this.wireName);
   final String wireName;

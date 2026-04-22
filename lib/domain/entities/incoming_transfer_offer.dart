@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 
+enum SenderTrustStatus { unknown, trusted, blocked }
+
 class IncomingTransferOffer extends Equatable {
   const IncomingTransferOffer({
     required this.transferId,
@@ -11,6 +13,8 @@ class IncomingTransferOffer extends Equatable {
     required this.fileHash,
     required this.storagePath,
     required this.createdAt,
+    this.trustStatus = SenderTrustStatus.unknown,
+    this.requiresApproval = true,
   });
 
   final String transferId;
@@ -22,6 +26,8 @@ class IncomingTransferOffer extends Equatable {
   final String fileHash;
   final String storagePath;
   final DateTime createdAt;
+  final SenderTrustStatus trustStatus;
+  final bool requiresApproval;
 
   @override
   List<Object?> get props => <Object?>[
@@ -34,5 +40,7 @@ class IncomingTransferOffer extends Equatable {
     fileHash,
     storagePath,
     createdAt,
+    trustStatus,
+    requiresApproval,
   ];
 }

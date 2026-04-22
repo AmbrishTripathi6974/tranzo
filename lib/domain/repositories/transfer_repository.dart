@@ -46,6 +46,7 @@ abstract interface class TransferRepository {
   Future<void> acceptIncomingTransfer({
     required IncomingTransferOffer transfer,
     bool persistPermanently = true,
+    bool trustSender = false,
   });
 
   Future<void> rejectIncomingTransfer({required String transferId});

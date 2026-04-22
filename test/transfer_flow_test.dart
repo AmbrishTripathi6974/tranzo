@@ -198,9 +198,118 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
       expect(bloc.state.status, TransferStatus.error);
-      expect(bloc.state.errorMessage, contains('Not enough storage'));
+      expect(bloc.state.errorMessage, contains('Insufficient storage'));
       await bloc.close();
     });
+
+    test(
+      'allows incoming accept when storage exactly fits file size',
+      () async {
+        final _FakeTransferRepository repository = _FakeTransferRepository(
+          availableStorageBytes: 1024,
+        );
+        final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+            _FakeMobileDataLargeUploadConsentRepository();
+        final TransferBloc bloc = TransferBloc(
+          startUpload: StartUploadUseCase(repository),
+          startDownload: StartDownloadUseCase(repository),
+          retryTransfer: RetryTransferUseCase(repository),
+          cancelTransfer: CancelTransferUseCase(repository),
+          sendFiles: SendFiles(repository),
+          validateTransferBatch: ValidateTransferBatchUseCase(
+            EvaluateUploadPolicyUseCase(
+              _FakeNetworkInfo(isMobile: false),
+              mobileDataConsent,
+            ),
+          ),
+          prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+            checkTransferPermissions: CheckTransferPermissionsUseCase(
+              _FakePermissionService(),
+            ),
+            checkStorageAvailability: CheckStorageAvailability(repository),
+          ),
+          prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+            CheckTransferPermissionsUseCase(_FakePermissionService()),
+          ),
+          mobileDataLargeUploadConsent: mobileDataConsent,
+        );
+
+        bloc.add(
+          IncomingTransferAccepted(
+            IncomingTransferOffer(
+              transferId: 't-fit',
+              senderId: 'u-1',
+              receiverId: 'u-2',
+              fileId: 'f-fit',
+              fileName: 'doc-fit.pdf',
+              fileSize: 1024,
+              fileHash: 'hash',
+              storagePath: 'path',
+              createdAt: DateTime(2026, 1, 1),
+            ),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(bloc.state.status, TransferStatus.success);
+        await bloc.close();
+      },
+    );
+
+    test(
+      'blocks incoming accept when file exceeds storage by one byte',
+      () async {
+        final _FakeTransferRepository repository = _FakeTransferRepository(
+          availableStorageBytes: 1023,
+        );
+        final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+            _FakeMobileDataLargeUploadConsentRepository();
+        final TransferBloc bloc = TransferBloc(
+          startUpload: StartUploadUseCase(repository),
+          startDownload: StartDownloadUseCase(repository),
+          retryTransfer: RetryTransferUseCase(repository),
+          cancelTransfer: CancelTransferUseCase(repository),
+          sendFiles: SendFiles(repository),
+          validateTransferBatch: ValidateTransferBatchUseCase(
+            EvaluateUploadPolicyUseCase(
+              _FakeNetworkInfo(isMobile: false),
+              mobileDataConsent,
+            ),
+          ),
+          prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+            checkTransferPermissions: CheckTransferPermissionsUseCase(
+              _FakePermissionService(),
+            ),
+            checkStorageAvailability: CheckStorageAvailability(repository),
+          ),
+          prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+            CheckTransferPermissionsUseCase(_FakePermissionService()),
+          ),
+          mobileDataLargeUploadConsent: mobileDataConsent,
+        );
+
+        bloc.add(
+          IncomingTransferAccepted(
+            IncomingTransferOffer(
+              transferId: 't-low',
+              senderId: 'u-1',
+              receiverId: 'u-2',
+              fileId: 'f-low',
+              fileName: 'doc-low.pdf',
+              fileSize: 1024,
+              fileHash: 'hash',
+              storagePath: 'path',
+              createdAt: DateTime(2026, 1, 1),
+            ),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(bloc.state.status, TransferStatus.error);
+        expect(bloc.state.errorMessage, contains('Insufficient storage'));
+        await bloc.close();
+      },
+    );
 
     test(
       'requires confirmation on mobile when batch total exceeds 50MB',
@@ -367,9 +476,7 @@ void main() {
       () async {
         final _FakeTransferRepository repository = _FakeTransferRepository();
         final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
-            _FakeMobileDataLargeUploadConsentRepository(
-              initialConsented: true,
-            );
+            _FakeMobileDataLargeUploadConsentRepository(initialConsented: true);
         final TransferBloc bloc = TransferBloc(
           startUpload: StartUploadUseCase(repository),
           startDownload: StartDownloadUseCase(repository),
@@ -600,9 +707,13 @@ class _FakeMobileDataLargeUploadConsentRepository
 }
 
 class _FakeTransferRepository implements TransferRepository {
-  _FakeTransferRepository({this.throwOnAccept = false});
+  _FakeTransferRepository({
+    this.throwOnAccept = false,
+    this.availableStorageBytes = 1 << 62,
+  });
 
   final bool throwOnAccept;
+  final int availableStorageBytes;
   int sendBatchCallCount = 0;
   bool? lastPersistPermanently;
 
@@ -610,11 +721,12 @@ class _FakeTransferRepository implements TransferRepository {
   Future<void> acceptIncomingTransfer({
     required IncomingTransferOffer transfer,
     bool persistPermanently = true,
+    bool trustSender = false,
   }) async {
     lastPersistPermanently = persistPermanently;
     if (throwOnAccept) {
       throw const AppException(
-        'Not enough storage space to receive this file.',
+        'Insufficient storage. Free up space to receive this file.',
       );
     }
   }
@@ -629,7 +741,8 @@ class _FakeTransferRepository implements TransferRepository {
   ) async => const <ProfileInteractionEntity>[];
 
   @override
-  Future<bool> hasAvailableStorage(int requiredBytes) async => true;
+  Future<bool> hasAvailableStorage(int requiredBytes) async =>
+      requiredBytes <= availableStorageBytes;
 
   @override
   Stream<IncomingTransferOffer> listenIncomingTransfers({

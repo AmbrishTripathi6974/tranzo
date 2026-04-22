@@ -16,6 +16,7 @@ import '../../domain/entities/transfer_lifecycle_signal.dart';
 import '../../domain/repositories/transfer_repository.dart';
 import '../../core/database/isar/collections/transfer_collection.dart';
 import '../../core/database/isar/collections/queued_transfer_collection.dart';
+import '../../core/database/isar/collections/sender_trust_collection.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/exceptions.dart';
 import '../../core/network/network_info.dart';
@@ -98,6 +99,9 @@ class TransferRepositoryImpl implements TransferRepository {
   static const int _maxIntegrityRetries = 3;
   static const String _offlineQueueStatusPending = 'pending';
   static const String _offlineQueueStatusExpired = 'expired';
+  static const String _insufficientStorageMessage =
+      'Insufficient storage. Free up space to receive this file.';
+  static const Duration _trustedSenderTtl = Duration(hours: 24);
 
   @override
   Future<void> startUpload(TransferTask task) async {
@@ -266,9 +270,7 @@ class TransferRepositoryImpl implements TransferRepository {
     if (cached != null) {
       final bool hasSpace = await hasAvailableStorage(cached.fileSize ?? 0);
       if (!hasSpace) {
-        throw const AppException(
-          'Not enough storage space to receive this file.',
-        );
+        throw const AppException(_insufficientStorageMessage);
       }
       return _mapCollectionToEntity(cached);
     }
@@ -285,8 +287,12 @@ class TransferRepositoryImpl implements TransferRepository {
     final List<TransferSessionRecord> initial = await _transferService
         .getIncomingTransfers(receiverId);
     for (final TransferSessionRecord row in initial) {
-      final IncomingTransferOffer? parsed = _mapRecordToIncomingOffer(row);
+      final IncomingTransferOffer? parsed = await _mapRecordToIncomingOffer(row);
       if (parsed == null) {
+        continue;
+      }
+      if (parsed.trustStatus == SenderTrustStatus.blocked) {
+        await _rejectBlockedIncoming(parsed);
         continue;
       }
       if (await _localDataSource.fileExistsByFileId(parsed.fileId)) {
@@ -314,10 +320,14 @@ class TransferRepositoryImpl implements TransferRepository {
       if (signal.event != TransferLifecycleEvent.transferStarted) {
         continue;
       }
-      final IncomingTransferOffer? offer = _mapPayloadToIncomingOffer(
+      final IncomingTransferOffer? offer = await _mapPayloadToIncomingOffer(
         signal.toPayload(),
       );
       if (offer == null) {
+        continue;
+      }
+      if (offer.trustStatus == SenderTrustStatus.blocked) {
+        await _rejectBlockedIncoming(offer);
         continue;
       }
       final bool exists = await _localDataSource.fileExistsByFileId(
@@ -365,7 +375,19 @@ class TransferRepositoryImpl implements TransferRepository {
   Future<void> acceptIncomingTransfer({
     required IncomingTransferOffer transfer,
     bool persistPermanently = true,
+    bool trustSender = false,
   }) async {
+    if (transfer.trustStatus == SenderTrustStatus.blocked) {
+      await rejectIncomingTransfer(transferId: transfer.transferId);
+      throw const AppException('This sender is blocked.');
+    }
+    if (trustSender) {
+      await _upsertSenderTrustStatus(
+        senderId: transfer.senderId,
+        status: SenderTrustStatus.trusted,
+        trustedFor: _trustedSenderTtl,
+      );
+    }
     final String lockId = '${transfer.transferId}:${transfer.fileId}';
     if (_activeTransferLocks.contains(lockId)) {
       return;
@@ -380,7 +402,7 @@ class TransferRepositoryImpl implements TransferRepository {
       final bool hasSpace = await hasAvailableStorage(transfer.fileSize);
       if (!hasSpace) {
         throw const AppException(
-          'Not enough storage space to receive this file.',
+          _insufficientStorageMessage,
           code: AppErrorCode.insufficientStorage,
         );
       }
@@ -527,6 +549,15 @@ class TransferRepositoryImpl implements TransferRepository {
       if (await tempTarget.exists()) {
         await tempTarget.delete();
       }
+      final bool hasSpaceForFinalWrite = await hasAvailableStorage(
+        assembled.length,
+      );
+      if (!hasSpaceForFinalWrite) {
+        throw const AppException(
+          _insufficientStorageMessage,
+          code: AppErrorCode.insufficientStorage,
+        );
+      }
       await tempTarget.writeAsBytes(assembled, flush: true);
       await tempTarget.rename(target.path);
 
@@ -602,6 +633,10 @@ class TransferRepositoryImpl implements TransferRepository {
 
   @override
   Future<void> rejectIncomingTransfer({required String transferId}) async {
+    final TransferCollection? transfer = await _isar.transferCollections
+        .filter()
+        .transferIdEqualTo(transferId)
+        .findFirst();
     await _localDataSource.updateTransferStatus(
       transferId,
       TransferStatus.cancelled,
@@ -614,6 +649,21 @@ class TransferRepositoryImpl implements TransferRepository {
       transferId: transferId,
       status: TransferStatus.cancelled.name,
     );
+    if (transfer != null) {
+      await _emitOrQueueSignal(
+        TransferLifecycleSignal(
+          transferId: transferId,
+          senderId: transfer.senderId,
+          receiverId: transfer.receiverId,
+          event: TransferLifecycleEvent.transferRejected,
+          emittedAt: DateTime.now(),
+          fileName: transfer.fileName,
+          fileSize: transfer.fileSize,
+          fileHash: transfer.fileHash,
+          storagePath: transfer.storagePath,
+        ),
+      );
+    }
   }
 
   @override
@@ -1021,15 +1071,15 @@ class TransferRepositoryImpl implements TransferRepository {
     progress[index] = next;
   }
 
-  IncomingTransferOffer? _mapRecordToIncomingOffer(
+  Future<IncomingTransferOffer?> _mapRecordToIncomingOffer(
     TransferSessionRecord record,
-  ) {
+  ) async {
     return _mapPayloadToIncomingOffer(record.row);
   }
 
-  IncomingTransferOffer? _mapPayloadToIncomingOffer(
+  Future<IncomingTransferOffer?> _mapPayloadToIncomingOffer(
     Map<String, dynamic> payload,
-  ) {
+  ) async {
     final String? transferId = payload['transfer_id'] as String?;
     final String? senderId = payload['sender_id'] as String?;
     final String? receiverId = payload['receiver_id'] as String?;
@@ -1050,6 +1100,9 @@ class TransferRepositoryImpl implements TransferRepository {
         (payload['storage_path'] as String?) ?? '$transferId/$fileId';
     final String createdAtRaw =
         (payload['created_at'] as String?) ?? DateTime.now().toIso8601String();
+    final SenderTrustStatus trustStatus = await _resolveSenderTrustStatus(
+      senderId,
+    );
     return IncomingTransferOffer(
       transferId: transferId,
       senderId: senderId,
@@ -1060,7 +1113,72 @@ class TransferRepositoryImpl implements TransferRepository {
       fileHash: fileHash,
       storagePath: storagePath,
       createdAt: DateTime.tryParse(createdAtRaw) ?? DateTime.now(),
+      trustStatus: trustStatus,
+      requiresApproval: trustStatus == SenderTrustStatus.unknown,
     );
+  }
+
+  Future<void> _rejectBlockedIncoming(IncomingTransferOffer transfer) async {
+    await _localDataSource.updateTransferStatus(
+      transfer.transferId,
+      TransferStatus.cancelled,
+    );
+    await _transferService.updateTransferStatus(
+      transferId: transfer.transferId,
+      status: TransferStatus.cancelled.name,
+    );
+    await _emitOrQueueSignal(
+      TransferLifecycleSignal(
+        transferId: transfer.transferId,
+        senderId: transfer.senderId,
+        receiverId: transfer.receiverId,
+        event: TransferLifecycleEvent.transferRejected,
+        emittedAt: DateTime.now(),
+        fileId: transfer.fileId,
+        fileName: transfer.fileName,
+        fileSize: transfer.fileSize,
+        fileHash: transfer.fileHash,
+        storagePath: transfer.storagePath,
+      ),
+    );
+  }
+
+  Future<SenderTrustStatus> _resolveSenderTrustStatus(String senderId) async {
+    final SenderTrustCollection? row = await _isar.senderTrustCollections
+        .filter()
+        .senderIdEqualTo(senderId)
+        .findFirst();
+    if (row == null) {
+      return SenderTrustStatus.unknown;
+    }
+    final DateTime now = DateTime.now();
+    if (row.status == SenderTrustStatus.trusted &&
+        row.trustedUntil != null &&
+        row.trustedUntil!.isBefore(now)) {
+      await _isar.writeTxn(() async {
+        await _isar.senderTrustCollections.delete(row.id);
+      });
+      return SenderTrustStatus.unknown;
+    }
+    return row.status;
+  }
+
+  Future<void> _upsertSenderTrustStatus({
+    required String senderId,
+    required SenderTrustStatus status,
+    Duration? trustedFor,
+  }) async {
+    final DateTime now = DateTime.now();
+    await _isar.writeTxn(() async {
+      final SenderTrustCollection row = SenderTrustCollection()
+        ..senderId = senderId
+        ..status = status
+        ..updatedAt = now
+        ..trustedUntil = status == SenderTrustStatus.trusted
+            ? now.add(trustedFor ?? _trustedSenderTtl)
+            : null;
+      await _isar.senderTrustCollections.putBySenderId(row);
+    });
   }
 
   Future<void> _emitOrQueueSignal(TransferLifecycleSignal signal) async {
@@ -1137,6 +1255,8 @@ class TransferRepositoryImpl implements TransferRepository {
         return TransferLifecycleEventType.transferCompleted;
       case TransferLifecycleEvent.transferFailed:
         return TransferLifecycleEventType.transferFailed;
+      case TransferLifecycleEvent.transferRejected:
+        return TransferLifecycleEventType.transferRejected;
     }
   }
 

@@ -349,4 +349,12 @@ class _FakeStorageService implements StorageService {
 
   @override
   Future<bool> hasSpaceForBytes(int requiredBytes) async => true;
+
+  @override
+  Future<LocalStorageSnapshot?> getLocalStorageSnapshot() async {
+    return const LocalStorageSnapshot(
+      freeBytes: 10 * 1024 * 1024,
+      totalBytes: 20 * 1024 * 1024,
+    );
+  }
 }

@@ -397,8 +397,19 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     final bool hasActiveLocalTransfer = state.activeTransferId != null;
     if (hasActiveLocalTransfer &&
         event.signal.event != TransferLifecycleEventType.transferCompleted &&
-        event.signal.event != TransferLifecycleEventType.transferFailed) {
+        event.signal.event != TransferLifecycleEventType.transferFailed &&
+        event.signal.event != TransferLifecycleEventType.transferRejected) {
       emit(state.copyWith(lifecycleSignalsByTransferId: nextSignals));
+      return;
+    }
+    if (event.signal.event == TransferLifecycleEventType.transferRejected) {
+      emit(
+        state.copyWith(
+          lifecycleSignalsByTransferId: nextSignals,
+          status: TransferStatus.error,
+          errorMessage: 'Receiver has not allowed this transfer.',
+        ),
+      );
       return;
     }
     emit(state.copyWith(lifecycleSignalsByTransferId: nextSignals));
@@ -408,6 +419,15 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     IncomingTransferReceived event,
     Emitter<TransferState> emit,
   ) {
+    if (!event.transfer.requiresApproval) {
+      add(IncomingTransferAccepted(event.transfer));
+      emit(
+        state.copyWith(
+          uiWarningMessage: 'Auto-accepted transfer from trusted sender.',
+        ),
+      );
+      return;
+    }
     final bool alreadyListed = state.incomingTransfers.any(
       (item) => item.transferId == event.transfer.transferId,
     );
@@ -437,6 +457,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       await _sendFiles.acceptIncoming(
         transfer: event.transfer,
         persistPermanently: decision.persistPermanently,
+        trustSender: event.trustSender,
       );
       emit(
         state.copyWith(

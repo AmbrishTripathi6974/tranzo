@@ -104,8 +104,80 @@ class _DownloadPageState extends State<DownloadPage> {
                               Row(
                                 children: <Widget>[
                                   FilledButton(
-                                    onPressed: () {
-                                      context.read<TransferBloc>().add(
+                                    onPressed: () async {
+                                      final TransferBloc transferBloc =
+                                          context.read<TransferBloc>();
+                                      if (transfer.requiresApproval) {
+                                        bool trustSender = false;
+                                        final bool? allow = await showDialog<bool>(
+                                          context: context,
+                                          builder: (BuildContext dialogContext) {
+                                            return StatefulBuilder(
+                                              builder: (BuildContext context, setState) {
+                                                return AlertDialog(
+                                                  title: const Text('Allow transfer?'),
+                                                  content: Column(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: <Widget>[
+                                                      Text(
+                                                        'Allow file from ${transfer.senderId}?',
+                                                      ),
+                                                      CheckboxListTile(
+                                                        value: trustSender,
+                                                        onChanged: (bool? value) {
+                                                          setState(() {
+                                                            trustSender =
+                                                                value ?? false;
+                                                          });
+                                                        },
+                                                        title: const Text(
+                                                          'Trust this sender',
+                                                        ),
+                                                        controlAffinity:
+                                                            ListTileControlAffinity.leading,
+                                                        contentPadding:
+                                                            EdgeInsets.zero,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  actions: <Widget>[
+                                                    TextButton(
+                                                      onPressed: () => Navigator.of(
+                                                        dialogContext,
+                                                      ).pop(false),
+                                                      child: const Text('Deny'),
+                                                    ),
+                                                    FilledButton(
+                                                      onPressed: () => Navigator.of(
+                                                        dialogContext,
+                                                      ).pop(true),
+                                                      child: const Text('Allow'),
+                                                    ),
+                                                  ],
+                                                );
+                                              },
+                                            );
+                                          },
+                                        );
+                                        if (allow != true || !mounted) {
+                                          if (allow == false) {
+                                            transferBloc.add(
+                                              IncomingTransferRejected(
+                                                transfer.transferId,
+                                              ),
+                                            );
+                                          }
+                                          return;
+                                        }
+                                        transferBloc.add(
+                                          IncomingTransferAccepted(
+                                            transfer,
+                                            trustSender: trustSender,
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      transferBloc.add(
                                         IncomingTransferAccepted(transfer),
                                       );
                                     },
