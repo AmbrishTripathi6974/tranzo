@@ -27,6 +27,7 @@ import 'package:tranzo/domain/usecases/prepare_batch_upload_ui_usecase.dart';
 import 'package:tranzo/domain/usecases/prepare_incoming_transfer_usecase.dart';
 import 'package:tranzo/domain/usecases/validate_transfer_batch_usecase.dart';
 import 'package:tranzo/presentation/bloc/transfer/transfer_bloc.dart';
+import 'package:tranzo/presentation/bloc/transfer/transfer_event.dart';
 import 'package:tranzo/presentation/pages/transfer_home_page.dart';
 
 void main() {
@@ -66,6 +67,80 @@ void main() {
 
     expect(find.text('Tranzo'), findsOneWidget);
   });
+
+  test('Incoming transfer emits receiver notification and dedupes', () async {
+    final TransferBloc bloc = _buildTransferBloc();
+    final IncomingTransferOffer incoming = _sampleIncomingTransfer();
+
+    bloc.add(IncomingTransferReceived(incoming));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(bloc.state.incomingTransfers, hasLength(1));
+    expect(
+      bloc.state.uiWarningMessage,
+      'Incoming transfer from ${incoming.senderId}.',
+    );
+
+    bloc.add(IncomingTransferReceived(incoming));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(bloc.state.incomingTransfers, hasLength(1));
+    await bloc.close();
+  });
+
+  test('Trusted sender is auto-accepted', () async {
+    final TransferBloc bloc = _buildTransferBloc();
+    final IncomingTransferOffer incoming = _sampleIncomingTransfer(
+      requiresApproval: false,
+    );
+
+    bloc.add(IncomingTransferReceived(incoming));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(bloc.state.uiWarningMessage, contains('Auto-accepted transfer'));
+    await bloc.close();
+  });
+}
+
+TransferBloc _buildTransferBloc() {
+  final _FakeTransferRepository repository = _FakeTransferRepository();
+  final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
+      _FakeMobileDataLargeUploadConsentRepository();
+  return TransferBloc(
+    startUpload: StartUploadUseCase(repository),
+    startDownload: StartDownloadUseCase(repository),
+    retryTransfer: RetryTransferUseCase(repository),
+    cancelTransfer: CancelTransferUseCase(repository),
+    sendFiles: SendFiles(repository),
+    validateTransferBatch: ValidateTransferBatchUseCase(
+      EvaluateUploadPolicyUseCase(_FakeNetworkInfo(), mobileDataConsent),
+    ),
+    prepareIncomingTransfer: PrepareIncomingTransferUseCase(
+      checkTransferPermissions: CheckTransferPermissionsUseCase(
+        _FakePermissionService(),
+      ),
+      checkStorageAvailability: CheckStorageAvailability(repository),
+    ),
+    prepareBatchUploadUi: PrepareBatchUploadUiUseCase(
+      CheckTransferPermissionsUseCase(_FakePermissionService()),
+    ),
+    mobileDataLargeUploadConsent: mobileDataConsent,
+  );
+}
+
+IncomingTransferOffer _sampleIncomingTransfer({bool requiresApproval = true}) {
+  return IncomingTransferOffer(
+    transferId: 'transfer_1',
+    senderId: 'sender_123',
+    receiverId: 'receiver_456',
+    fileId: 'file_1',
+    fileName: 'hello.txt',
+    fileSize: 1024,
+    fileHash: 'hash',
+    storagePath: 'path/to/file',
+    createdAt: DateTime.utc(2026, 1, 1),
+    requiresApproval: requiresApproval,
+  );
 }
 
 class _FakeMobileDataLargeUploadConsentRepository

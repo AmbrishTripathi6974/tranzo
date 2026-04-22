@@ -179,6 +179,12 @@ class _FakeTransferService implements TransferService {
   final List<String> updatedTransferIds = <String>[];
 
   @override
+  String? currentAuthenticatedUserId() => 'sender-1';
+
+  @override
+  Future<String> requireAuthenticatedUserId() async => 'sender-1';
+
+  @override
   Future<TransferSessionRecord> createTransferSession(
     TransferSessionPayload payload,
   ) async {

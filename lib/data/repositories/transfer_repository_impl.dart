@@ -99,6 +99,7 @@ class TransferRepositoryImpl implements TransferRepository {
   static const int _maxIntegrityRetries = 3;
   static const String _offlineQueueStatusPending = 'pending';
   static const String _offlineQueueStatusExpired = 'expired';
+  static const String _localUserIdPrefix = 'local_';
   static const String _insufficientStorageMessage =
       'Insufficient storage. Free up space to receive this file.';
   static const Duration _trustedSenderTtl = Duration(hours: 24);
@@ -287,7 +288,9 @@ class TransferRepositoryImpl implements TransferRepository {
     final List<TransferSessionRecord> initial = await _transferService
         .getIncomingTransfers(receiverId);
     for (final TransferSessionRecord row in initial) {
-      final IncomingTransferOffer? parsed = await _mapRecordToIncomingOffer(row);
+      final IncomingTransferOffer? parsed = await _mapRecordToIncomingOffer(
+        row,
+      );
       if (parsed == null) {
         continue;
       }
@@ -737,9 +740,31 @@ class TransferRepositoryImpl implements TransferRepository {
     required String recipientCode,
     required List<SelectedTransferFile> files,
   }) async* {
+    if (senderId.startsWith(_localUserIdPrefix)) {
+      throw const AppException(
+        'Cloud pairing is unavailable because this device is in local-only mode. '
+        'Sign in again or reopen the app when network/auth is available.',
+        code: AppErrorCode.invalidRecipientCode,
+      );
+    }
     if (files.isEmpty) {
       throw const AppException('At least one file is required to send.');
     }
+
+    final String authenticatedUserId = await _transferService
+        .requireAuthenticatedUserId();
+    final String effectiveSenderId;
+    if (senderId != authenticatedUserId) {
+      developer.log(
+        'sender_id_corrected_from_session',
+        name: 'transfer',
+        error: <String, Object?>{
+          'requestedSenderId': senderId,
+          'authenticatedUserId': authenticatedUserId,
+        },
+      );
+    }
+    effectiveSenderId = authenticatedUserId;
 
     final String? receiverId = await _transferService.resolveRecipientIdByCode(
       recipientCode,
@@ -750,7 +775,7 @@ class TransferRepositoryImpl implements TransferRepository {
         code: AppErrorCode.invalidRecipientCode,
       );
     }
-    if (receiverId == senderId) {
+    if (receiverId == effectiveSenderId) {
       throw const AppException(
         'Sender and receiver must be different users.',
         code: AppErrorCode.invalidReceiver,
@@ -769,7 +794,7 @@ class TransferRepositoryImpl implements TransferRepository {
     }
 
     final String sessionId =
-        '${senderId}_${DateTime.now().microsecondsSinceEpoch}';
+        '${effectiveSenderId}_${DateTime.now().microsecondsSinceEpoch}';
     final List<TransferFileProgress> progress = sortedFiles
         .map(
           (SelectedTransferFile file) => TransferFileProgress(
@@ -791,24 +816,51 @@ class TransferRepositoryImpl implements TransferRepository {
 
     try {
       for (final SelectedTransferFile file in sortedFiles) {
+        String? activeTransferId;
+        String? activeFileHash;
+        String activeStoragePath = '$sessionId/${file.id}';
         try {
           final String transferId = '${sessionId}_${file.id}';
+          final DateTime transferCreatedAt = DateTime.now();
+          activeTransferId = transferId;
           _cancelledTransferIds.remove(transferId);
           final String fileHash = await _sha256Hasher.hashFile(file.localPath);
+          activeFileHash = fileHash;
           final TransferSessionRecord session = await _transferService
               .createTransferSession(
                 TransferSessionPayload(
                   transferId: transferId,
-                  senderId: senderId,
+                  senderId: effectiveSenderId,
                   receiverId: receiverId,
                   fileName: file.fileName,
                   fileSize: file.sizeBytes,
                   fileHash: fileHash,
                   status: TransferStatus.uploading.name,
-                  storagePath: '$sessionId/${file.id}',
-                  createdAt: DateTime.now(),
+                  storagePath: activeStoragePath,
+                  createdAt: transferCreatedAt,
                 ),
               );
+          activeTransferId = session.transferId;
+          await _upsertLocalTransfer(
+            transferEntity: TransferEntity(
+              id: session.transferId,
+              senderId: effectiveSenderId,
+              receiverId: receiverId,
+              status: TransferStatus.uploading,
+              createdAt: transferCreatedAt,
+              fileName: file.fileName,
+              fileSize: file.sizeBytes,
+              senderUsername: null,
+              receiverUsername: null,
+              expiresAt: null,
+            ),
+            fileName: file.fileName,
+            fileSize: file.sizeBytes,
+            fileHash: fileHash,
+            storagePath: activeStoragePath,
+            intentScore: null,
+            intentExpiry: null,
+          );
           developer.log(
             'transfer_start',
             name: 'transfer',
@@ -821,7 +873,7 @@ class TransferRepositoryImpl implements TransferRepository {
           await _emitOrQueueSignal(
             TransferLifecycleSignal(
               transferId: session.transferId,
-              senderId: senderId,
+              senderId: effectiveSenderId,
               receiverId: receiverId,
               event: TransferLifecycleEvent.transferStarted,
               emittedAt: DateTime.now(),
@@ -829,7 +881,7 @@ class TransferRepositoryImpl implements TransferRepository {
               fileName: file.fileName,
               fileSize: file.sizeBytes,
               fileHash: fileHash,
-              storagePath: '$sessionId/${file.id}',
+              storagePath: activeStoragePath,
             ),
           );
           final TransferTask task = TransferTask(
@@ -957,11 +1009,62 @@ class TransferRepositoryImpl implements TransferRepository {
             sessionId: sessionId,
             files: List<TransferFileProgress>.from(progress),
           );
+          await _localDataSource.updateTransferStatus(
+            session.transferId,
+            TransferStatus.completed,
+          );
+          await _transferService.updateTransferStatus(
+            transferId: session.transferId,
+            status: TransferStatus.completed.name,
+          );
+          await _emitOrQueueSignal(
+            TransferLifecycleSignal(
+              transferId: session.transferId,
+              senderId: effectiveSenderId,
+              receiverId: receiverId,
+              event: TransferLifecycleEvent.transferCompleted,
+              emittedAt: DateTime.now(),
+              fileId: file.id,
+              fileName: file.fileName,
+              fileSize: file.sizeBytes,
+              fileHash: fileHash,
+              storagePath: activeStoragePath,
+            ),
+          );
           await _localDataSource.clearTransferProgress(
             session.transferId,
             fileId: file.id,
           );
         } catch (error) {
+          final String reason = error.toString();
+          if (activeTransferId != null) {
+            await _localDataSource.updateTransferStatus(
+              activeTransferId,
+              TransferStatus.failed,
+            );
+            try {
+              await _transferService.updateTransferStatus(
+                transferId: activeTransferId,
+                status: TransferStatus.failed.name,
+              );
+              await _emitOrQueueSignal(
+                TransferLifecycleSignal(
+                  transferId: activeTransferId,
+                  senderId: effectiveSenderId,
+                  receiverId: receiverId,
+                  event: TransferLifecycleEvent.transferFailed,
+                  emittedAt: DateTime.now(),
+                  fileId: file.id,
+                  fileName: file.fileName,
+                  fileSize: file.sizeBytes,
+                  fileHash: activeFileHash,
+                  storagePath: activeStoragePath,
+                ),
+              );
+            } catch (_) {
+              // Keep per-file isolation: signaling failures must not crash loop.
+            }
+          }
           _replaceProgress(
             progress,
             TransferFileProgress(
@@ -969,6 +1072,7 @@ class TransferRepositoryImpl implements TransferRepository {
               fileName: file.fileName,
               progress: 0,
               status: TransferFileProgressStatus.failed,
+              errorMessage: reason,
             ),
           );
           yield TransferBatchProgress(
@@ -981,7 +1085,7 @@ class TransferRepositoryImpl implements TransferRepository {
             error: <String, Object?>{
               'sessionId': sessionId,
               'fileId': file.id,
-              'reason': error.toString(),
+              'reason': reason,
             },
           );
           continue;

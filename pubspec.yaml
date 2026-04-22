@@ -53,6 +53,7 @@ dependencies:
   flutter_foreground_task: ^9.1.0
   workmanager: ^0.9.0+3
   flutter_dotenv: ^6.0.1
+  flutter_native_splash: ^2.4.6
 
 dev_dependencies:
   flutter_test:
@@ -68,6 +69,7 @@ dev_dependencies:
   freezed: ^3.2.3
   json_serializable: ^6.11.1
   isar_community_generator: ^3.3.2
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -81,6 +83,25 @@ flutter:
   uses-material-design: true
   assets:
     - .env
+    - assets/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/tranzo_icon.png
+  adaptive_icon_background: '#4B58C1'
+  adaptive_icon_foreground: assets/tranzo_icon.png
+  remove_alpha_ios: true
+
+flutter_native_splash:
+  color: '#4B58C1'
+  image: assets/tranzo_icon.png
+  android: true
+  ios: true
+  web: false
+  android_12:
+    color: '#4B58C1'
+    image: assets/tranzo_icon.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

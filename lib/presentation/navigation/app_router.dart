@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../pages/transfer_home_page.dart';
 import '../pages/upload_page.dart';
+import '../pages/download_page.dart';
 import '../screens/history/history_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import 'bottom_nav.dart';
@@ -25,6 +26,11 @@ abstract final class AppRouter {
             path: '/transfer',
             pageBuilder: (context, state) =>
                 _buildTabPage(state: state, child: const UploadPage()),
+          ),
+          GoRoute(
+            path: '/inbox',
+            pageBuilder: (context, state) =>
+                _buildTabPage(state: state, child: const DownloadPage()),
           ),
           GoRoute(
             path: '/history',

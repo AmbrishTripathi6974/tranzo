@@ -20,7 +20,6 @@ import '../data/repositories/transfer_repository_impl.dart';
 import '../domain/repositories/auth_repository.dart';
 import '../domain/repositories/mobile_data_large_upload_consent_repository.dart';
 import '../domain/repositories/transfer_repository.dart';
-import '../domain/usecases/create_user_usecase.dart';
 import '../domain/usecases/get_current_user_usecase.dart';
 import '../domain/usecases/get_user_interactions_usecase.dart';
 import '../domain/usecases/get_transfer_history_usecase.dart';
@@ -32,10 +31,13 @@ import '../domain/usecases/prepare_batch_upload_ui_usecase.dart';
 import '../domain/usecases/prepare_incoming_transfer_usecase.dart';
 import '../domain/usecases/resume_incomplete_transfers_usecase.dart';
 import '../domain/usecases/retry_transfer_usecase.dart';
+import '../domain/usecases/send_email_otp_usecase.dart';
 import '../domain/usecases/send_files_usecase.dart';
+import '../domain/usecases/sign_out_usecase.dart';
 import '../domain/usecases/start_download_usecase.dart';
 import '../domain/usecases/start_upload_usecase.dart';
 import '../domain/usecases/validate_transfer_batch_usecase.dart';
+import '../domain/usecases/verify_email_otp_usecase.dart';
 import '../presentation/bloc/auth/auth_bloc.dart';
 import '../presentation/bloc/history/history_bloc.dart';
 import '../presentation/bloc/profile/profile_bloc.dart';
@@ -137,9 +139,17 @@ Future<void> configureDependencies() async {
   );
 
   // Use cases
-  sl.registerLazySingleton<CreateUser>(() => CreateUser(sl<AuthRepository>()));
   sl.registerLazySingleton<GetCurrentUserUseCase>(
     () => GetCurrentUserUseCase(sl<AuthRepository>()),
+  );
+  sl.registerLazySingleton<SendEmailOtpUseCase>(
+    () => SendEmailOtpUseCase(sl<AuthRepository>()),
+  );
+  sl.registerLazySingleton<VerifyEmailOtpUseCase>(
+    () => VerifyEmailOtpUseCase(sl<AuthRepository>()),
+  );
+  sl.registerLazySingleton<SignOutUseCase>(
+    () => SignOutUseCase(sl<AuthRepository>()),
   );
   sl.registerLazySingleton<GetTransferHistoryUseCase>(
     () => GetTransferHistoryUseCase(sl<TransferRepository>()),
@@ -194,7 +204,9 @@ Future<void> configureDependencies() async {
   sl.registerFactory<AuthBloc>(
     () => AuthBloc(
       getCurrentUser: sl<GetCurrentUserUseCase>(),
-      createUser: sl<CreateUser>(),
+      sendEmailOtp: sl<SendEmailOtpUseCase>(),
+      verifyEmailOtp: sl<VerifyEmailOtpUseCase>(),
+      signOut: sl<SignOutUseCase>(),
     ),
   );
   sl.registerFactory<HistoryBloc>(

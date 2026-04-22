@@ -327,25 +327,59 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
                 for (final TransferFileProgress item in progress.files)
                   item.fileId: item,
               };
+          final int totalFiles = progress.files.length;
+          final int completedCount = progress.files
+              .where(
+                (TransferFileProgress item) =>
+                    item.status == TransferFileProgressStatus.completed,
+              )
+              .length;
+          final int failedCount = progress.files
+              .where(
+                (TransferFileProgress item) =>
+                    item.status == TransferFileProgressStatus.failed,
+              )
+              .length;
           final double total = progress.files.isEmpty
               ? 0
               : progress.files
                         .map((TransferFileProgress e) => e.progress)
                         .reduce((double a, double b) => a + b) /
                     progress.files.length;
+          final bool allFailed = totalFiles > 0 && failedCount == totalFiles;
+          final bool allCompleted = totalFiles > 0 && completedCount == totalFiles;
+          final bool hasPartialFailures =
+              failedCount > 0 && !allFailed && completedCount > 0;
+          String? firstFailureMessage;
+          for (final TransferFileProgress item in progress.files) {
+            if (item.status == TransferFileProgressStatus.failed &&
+                item.errorMessage != null &&
+                item.errorMessage!.trim().isNotEmpty) {
+              firstFailureMessage = item.errorMessage;
+              break;
+            }
+          }
           return state.copyWith(
-            status: total >= 1
-                ? TransferStatus.success
-                : TransferStatus.loading,
+            status: allFailed
+                ? TransferStatus.error
+                : (allCompleted ? TransferStatus.success : TransferStatus.loading),
             progress: total,
             batchSessionId: progress.sessionId,
             batchProgressByFileId: byId,
-            clearErrorMessage: true,
-            selectedUploadFiles: total >= 1
+            errorMessage: allFailed
+                ? (firstFailureMessage ??
+                      'Transfer failed before upload could start. Check connection and cloud permissions, then retry.')
+                : null,
+            clearErrorMessage: !allFailed,
+            uiWarningMessage: hasPartialFailures
+                ? 'Some files failed to upload. Review file statuses and retry.'
+                : null,
+            clearUiWarningMessage: false,
+            selectedUploadFiles: allCompleted
                 ? const <SelectedTransferFile>[]
                 : state.selectedUploadFiles,
-            clearUploadDraftSelectionNotice: total >= 1,
-            uploadRecipientCodeDraft: total >= 1
+            clearUploadDraftSelectionNotice: allCompleted,
+            uploadRecipientCodeDraft: allCompleted
                 ? ''
                 : state.uploadRecipientCodeDraft,
           );
@@ -440,6 +474,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
           ...state.incomingTransfers,
           event.transfer,
         ],
+        uiWarningMessage: 'Incoming transfer from ${event.transfer.senderId}.',
       ),
     );
   }
@@ -503,10 +538,20 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
   }
 
   String _toDisplayError(Object error) {
-    if (error is AppException) {
-      return error.message;
+    final String raw = error is AppException ? error.message : error.toString();
+    final String normalized = raw.toLowerCase();
+    final bool isRecipientCodePermissionIssue =
+        (normalized.contains('"code":"42501"') ||
+            normalized.contains("code':'42501") ||
+            normalized.contains('permission denied')) &&
+        normalized.contains('recipient_codes');
+    if (isRecipientCodePermissionIssue) {
+      return 'Cloud pairing is unavailable right now. Please reopen the app and try again.';
     }
-    return error.toString();
+    if (error is AppException) {
+      return raw;
+    }
+    return raw;
   }
 
   @override

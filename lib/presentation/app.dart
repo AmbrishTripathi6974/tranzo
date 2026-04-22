@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 import '../di/injection_container.dart';
 import 'bloc/auth/auth_bloc.dart';
@@ -10,10 +11,17 @@ import 'bloc/profile/profile_bloc.dart';
 import 'bloc/profile/profile_event.dart';
 import 'bloc/profile/profile_state.dart';
 import 'bloc/transfer/transfer_bloc.dart';
+import 'bloc/transfer/transfer_event.dart';
+import 'bloc/transfer/transfer_state.dart';
 import 'navigation/app_router.dart';
+import 'pages/auth_gate_page.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
+
+  static final GlobalKey<ScaffoldMessengerState> _messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+  static bool _nativeSplashRemoved = false;
 
   @override
   Widget build(BuildContext context) {
@@ -27,82 +35,146 @@ class App extends StatelessWidget {
         BlocProvider<TransferBloc>(create: (_) => sl<TransferBloc>()),
       ],
       child: _ProfileBootstrap(
-        child: BlocListener<AuthBloc, AuthState>(
-          listenWhen: (AuthState previous, AuthState current) {
-            // Profile identity is local-first; request profile once auth is no
-            // longer loading, even if auth ended in error.
-            if (current.status == AuthStatus.loading) {
-              return false;
-            }
-            return previous.status != current.status ||
-                previous.user?.id != current.user?.id;
-          },
-          listener: (BuildContext context, AuthState state) {
-            context.read<ProfileBloc>().add(const ProfileRequested());
-          },
+        child: MultiBlocListener(
+          listeners: <BlocListener<dynamic, dynamic>>[
+            BlocListener<AuthBloc, AuthState>(
+              listenWhen: (AuthState previous, AuthState current) {
+                return previous.activeAction == AuthAction.bootstrap &&
+                    current.activeAction != AuthAction.bootstrap;
+              },
+              listener: (BuildContext context, AuthState state) {
+                if (_nativeSplashRemoved) {
+                  return;
+                }
+                _nativeSplashRemoved = true;
+                FlutterNativeSplash.remove();
+              },
+            ),
+            BlocListener<AuthBloc, AuthState>(
+              listenWhen: (AuthState previous, AuthState current) {
+                // Profile identity is local-first; request profile once auth is
+                // no longer loading, even if auth ended in error.
+                if (current.status == AuthStatus.loading) {
+                  return false;
+                }
+                return previous.status != current.status ||
+                    previous.user?.id != current.user?.id;
+              },
+              listener: (BuildContext context, AuthState state) {
+                if (state.status == AuthStatus.success && state.user != null) {
+                  context.read<ProfileBloc>().add(const ProfileRequested());
+                }
+              },
+            ),
+            BlocListener<ProfileBloc, ProfileState>(
+              listenWhen: (ProfileState previous, ProfileState current) =>
+                  previous.status != current.status ||
+                  previous.user?.id != current.user?.id,
+              listener: (BuildContext context, ProfileState profileState) {
+                if (profileState.status != ProfileStatus.success ||
+                    profileState.user == null) {
+                  return;
+                }
+                context.read<TransferBloc>().add(
+                  IncomingTransferListeningRequested(profileState.user!.id),
+                );
+                context.read<TransferBloc>().add(
+                  TransferLifecycleListeningRequested(profileState.user!.id),
+                );
+              },
+            ),
+            BlocListener<TransferBloc, TransferState>(
+              listenWhen:
+                  (TransferState previous, TransferState current) =>
+                      previous.uiWarningMessage != current.uiWarningMessage &&
+                      current.uiWarningMessage != null,
+              listener: (BuildContext context, TransferState transferState) {
+                final String? message = transferState.uiWarningMessage;
+                if (message == null) {
+                  return;
+                }
+                _messengerKey.currentState
+                  ?..hideCurrentSnackBar()
+                  ..showSnackBar(SnackBar(content: Text(message)));
+                context.read<TransferBloc>().add(const TransferUiEffectConsumed());
+              },
+            ),
+          ],
           child: MaterialApp.router(
-          title: 'Tranzo',
-          debugShowCheckedModeBanner: false,
-          routerConfig: AppRouter.router,
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF4F46E5),
-              brightness: Brightness.light,
-            ),
-            useMaterial3: true,
-            scaffoldBackgroundColor: const Color(0xFFF7F8FC),
-            appBarTheme: const AppBarTheme(
-              centerTitle: false,
-              elevation: 0,
-              scrolledUnderElevation: 0,
-              backgroundColor: Colors.transparent,
-            ),
-            cardTheme: CardThemeData(
-              elevation: 0,
-              color: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-                side: const BorderSide(color: Color(0xFFE9EAF2)),
+            scaffoldMessengerKey: _messengerKey,
+            title: 'Tranzo',
+            debugShowCheckedModeBanner: false,
+            routerConfig: AppRouter.router,
+            builder: (BuildContext context, Widget? child) {
+              return BlocBuilder<AuthBloc, AuthState>(
+                builder: (BuildContext context, AuthState authState) {
+                  if (authState.status == AuthStatus.success &&
+                      authState.user != null) {
+                    return child ?? const SizedBox.shrink();
+                  }
+                  return const AuthGatePage();
+                },
+              );
+            },
+            theme: ThemeData(
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: const Color(0xFF4F46E5),
+                brightness: Brightness.light,
               ),
-            ),
-            inputDecorationTheme: InputDecorationTheme(
-              filled: true,
-              fillColor: Colors.white,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
+              useMaterial3: true,
+              scaffoldBackgroundColor: const Color(0xFFF7F8FC),
+              appBarTheme: const AppBarTheme(
+                centerTitle: false,
+                elevation: 0,
+                scrolledUnderElevation: 0,
+                backgroundColor: Colors.transparent,
               ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0xFFD8DBEA)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0xFFD8DBEA)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(
-                  color: Color(0xFF4F46E5),
-                  width: 1.4,
-                ),
-              ),
-            ),
-            filledButtonTheme: FilledButtonThemeData(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
+              cardTheme: CardThemeData(
+                elevation: 0,
+                color: Colors.white,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(20),
+                  side: const BorderSide(color: Color(0xFFE9EAF2)),
                 ),
               ),
-            ),
-            navigationBarTheme: const NavigationBarThemeData(
-              backgroundColor: Colors.white,
-              indicatorColor: Color(0xFFE7E8FF),
-              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+              inputDecorationTheme: InputDecorationTheme(
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFFD8DBEA)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFFD8DBEA)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF4F46E5),
+                    width: 1.4,
+                  ),
+                ),
+              ),
+              filledButtonTheme: FilledButtonThemeData(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+              navigationBarTheme: const NavigationBarThemeData(
+                backgroundColor: Colors.white,
+                indicatorColor: Color(0xFFE7E8FF),
+                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+              ),
             ),
           ),
-        ),
         ),
       ),
     );
@@ -130,7 +202,8 @@ class _ProfileBootstrapState extends State<_ProfileBootstrap> {
       }
       final AuthState auth = context.read<AuthBloc>().state;
       final ProfileBloc profile = context.read<ProfileBloc>();
-      if (auth.status != AuthStatus.loading &&
+      if (auth.status == AuthStatus.success &&
+          auth.user != null &&
           profile.state.status == ProfileStatus.initial) {
         profile.add(const ProfileRequested());
       }

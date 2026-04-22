@@ -15,20 +15,38 @@ class TransferService {
   static const String _recipientCodesTable = 'recipient_codes';
   static const String _chunksBucket = 'transfer-chunks';
   static const String _insufficientRecipientCodePermissionCode = '42501';
+  static const String _missingTransferSessionsHint =
+      "Could not find the table 'public.transfer_sessions' in the schema cache";
+  static const String _missingRecipientCodesHint =
+      "Could not find the table 'public.recipient_codes' in the schema cache";
+  static const String _storageObjectsRlsHint =
+      'new row violates row-level security policy';
+  static const String _postgrestRlsHint =
+      'new row violates row-level security policy';
 
   /// Inserts a session row and returns the persisted record from PostgREST.
   Future<TransferSessionRecord> createTransferSession(
     TransferSessionPayload payload,
   ) async {
     try {
-      final Map<String, dynamic> row = await _client
-          .from(_transferSessionsTable)
-          .insert(payload.toRow())
-          .select()
-          .single();
+      final Map<String, dynamic> row = await _insertTransferSession(payload);
       return TransferSessionRecord.fromRow(row);
     } on PostgrestException catch (e) {
-      throw AppException(e.message);
+      if (_isRlsViolation(e.message) && await _tryRefreshSession()) {
+        try {
+          final Map<String, dynamic> row = await _insertTransferSession(payload);
+          return TransferSessionRecord.fromRow(row);
+        } on PostgrestException catch (retryError) {
+          throw _mapPostgrestException(
+            retryError,
+            fallbackMessage: 'Failed to create transfer session.',
+          );
+        }
+      }
+      throw _mapPostgrestException(
+        e,
+        fallbackMessage: 'Failed to create transfer session.',
+      );
     }
   }
 
@@ -61,7 +79,10 @@ class TransferService {
           code: AppErrorCode.invalidRecipientCode,
         );
       }
-      throw AppException(e.message);
+      throw _mapPostgrestException(
+        e,
+        fallbackMessage: 'Failed to resolve recipient code.',
+      );
     }
   }
 
@@ -71,22 +92,66 @@ class TransferService {
     required int chunkIndex,
     required Stream<List<int>> byteStream,
   }) async {
+    final List<int> chunkBytes = await byteStream.fold<List<int>>(
+      <int>[],
+      (List<int> acc, List<int> data) => acc..addAll(data),
+    );
     try {
-      final List<int> chunkBytes = await byteStream.fold<List<int>>(
-        <int>[],
-        (List<int> acc, List<int> data) => acc..addAll(data),
+      await _uploadChunkBinary(
+        sessionId: sessionId,
+        fileId: fileId,
+        chunkIndex: chunkIndex,
+        chunkBytes: chunkBytes,
       );
-      final String objectPath = '$sessionId/$fileId/chunk_$chunkIndex.part';
-      await _client.storage
-          .from(_chunksBucket)
-          .uploadBinary(
-            objectPath,
-            Uint8List.fromList(chunkBytes),
-            fileOptions: const FileOptions(upsert: true),
-          );
     } on StorageException catch (e) {
-      throw AppException(e.message);
+      if (_isRlsViolation(e.message) && await _tryRefreshSession()) {
+        try {
+          await _uploadChunkBinary(
+            sessionId: sessionId,
+            fileId: fileId,
+            chunkIndex: chunkIndex,
+            chunkBytes: chunkBytes,
+          );
+          return;
+        } on StorageException catch (retryError) {
+          throw _mapStorageException(
+            retryError,
+            fallbackMessage: 'Failed to upload transfer chunk.',
+          );
+        }
+      }
+      throw _mapStorageException(
+        e,
+        fallbackMessage: 'Failed to upload transfer chunk.',
+      );
     }
+  }
+
+  String? currentAuthenticatedUserId() {
+    return _client.auth.currentUser?.id;
+  }
+
+  Future<String> requireAuthenticatedUserId() async {
+    Session? session = _client.auth.currentSession;
+    if (_sessionLikelyExpired(session)) {
+      try {
+        await _client.auth.refreshSession();
+        session = _client.auth.currentSession;
+      } catch (_) {
+        // Fall through to validation below.
+      }
+    }
+    String? userId = session?.user.id ?? _client.auth.currentUser?.id;
+    if (userId == null || userId.trim().isEmpty) {
+      userId = await _tryAnonymousReauth();
+    }
+    if (userId == null || userId.trim().isEmpty) {
+      throw const AppException(
+        'Cloud session expired. Sign in again before sending transfers.',
+        code: AppErrorCode.invalidRecipientCode,
+      );
+    }
+    return userId;
   }
 
   Future<List<TransferSessionRecord>> getIncomingTransfers(
@@ -105,7 +170,10 @@ class TransferService {
           )
           .toList(growable: false);
     } on PostgrestException catch (e) {
-      throw AppException(e.message);
+      throw _mapPostgrestException(
+        e,
+        fallbackMessage: 'Failed to load incoming transfers.',
+      );
     }
   }
 
@@ -119,7 +187,10 @@ class TransferService {
           .update(<String, dynamic>{'status': status})
           .eq('transfer_id', transferId);
     } on PostgrestException catch (e) {
-      throw AppException(e.message);
+      throw _mapPostgrestException(
+        e,
+        fallbackMessage: 'Failed to update transfer status.',
+      );
     }
   }
 
@@ -132,8 +203,108 @@ class TransferService {
     try {
       return await _client.storage.from(_chunksBucket).download(objectPath);
     } on StorageException catch (e) {
-      throw AppException(e.message);
+      throw _mapStorageException(
+        e,
+        fallbackMessage: 'Failed to download transfer chunk.',
+      );
     }
+  }
+
+  AppException _mapPostgrestException(
+    PostgrestException exception, {
+    required String fallbackMessage,
+  }) {
+    final String message = exception.message;
+    if (message.contains(_missingTransferSessionsHint) ||
+        message.contains(_missingRecipientCodesHint)) {
+      return const AppException(
+        'Cloud transfer tables are missing in Supabase. Apply latest migrations and restart the app.',
+      );
+    }
+    if (_isRlsViolation(message)) {
+      return const AppException(
+        'Cloud session is not authorized for transfer writes. Re-authenticate and retry.',
+      );
+    }
+    return AppException(message.isEmpty ? fallbackMessage : message);
+  }
+
+  AppException _mapStorageException(
+    StorageException exception, {
+    required String fallbackMessage,
+  }) {
+    final String message = exception.message;
+    if (message.toLowerCase().contains(_storageObjectsRlsHint)) {
+      return const AppException(
+        'Cloud storage policy blocked upload. Reauthenticate on sender and retry.',
+      );
+    }
+    return AppException(message.isEmpty ? fallbackMessage : message);
+  }
+
+  Future<Map<String, dynamic>> _insertTransferSession(
+    TransferSessionPayload payload,
+  ) {
+    return _client
+        .from(_transferSessionsTable)
+        .insert(payload.toRow())
+        .select()
+        .single();
+  }
+
+  Future<void> _uploadChunkBinary({
+    required String sessionId,
+    required String fileId,
+    required int chunkIndex,
+    required List<int> chunkBytes,
+  }) {
+    final String objectPath = '$sessionId/$fileId/chunk_$chunkIndex.part';
+    return _client.storage
+        .from(_chunksBucket)
+        .uploadBinary(
+          objectPath,
+          Uint8List.fromList(chunkBytes),
+          fileOptions: const FileOptions(upsert: false),
+        );
+  }
+
+  bool _isRlsViolation(String message) {
+    final String normalized = message.toLowerCase();
+    return normalized.contains(_postgrestRlsHint) ||
+        normalized.contains(_storageObjectsRlsHint);
+  }
+
+  Future<bool> _tryRefreshSession() async {
+    try {
+      await _client.auth.refreshSession();
+      return _client.auth.currentSession != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<String?> _tryAnonymousReauth() async {
+    try {
+      final AuthResponse response = await _client.auth.signInAnonymously();
+      return response.user?.id ?? response.session?.user.id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _sessionLikelyExpired(Session? session) {
+    if (session == null) {
+      return true;
+    }
+    final dynamic rawExpiresAt = session.expiresAt;
+    final int? expiresAtEpochSeconds = rawExpiresAt is int
+        ? rawExpiresAt
+        : (rawExpiresAt is String ? int.tryParse(rawExpiresAt) : null);
+    if (expiresAtEpochSeconds == null) {
+      return false;
+    }
+    final int nowEpochSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return nowEpochSeconds >= (expiresAtEpochSeconds - 30);
   }
 }
 

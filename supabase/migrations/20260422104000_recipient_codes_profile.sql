@@ -1,5 +1,5 @@
 -- Tranzo profile + pairing: AuthService and TransferService expect this table.
--- See lib/core/services/auth_service.dart (loadCurrentSessionProfile, createAnonymousUserWithShortCode)
+-- See lib/core/services/auth_service.dart (loadCurrentSessionProfile, verifyEmailOtp)
 -- and lib/core/services/transfer_service.dart (resolveRecipientIdByCode).
 
 create table if not exists public.recipient_codes (

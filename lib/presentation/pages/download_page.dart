@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../bloc/profile/profile_bloc.dart';
-import '../bloc/profile/profile_state.dart';
 import '../bloc/transfer/transfer_bloc.dart';
 import '../bloc/transfer/transfer_event.dart';
 import '../bloc/transfer/transfer_state.dart';
@@ -16,66 +14,15 @@ class DownloadPage extends StatefulWidget {
 
 class _DownloadPageState extends State<DownloadPage> {
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ProfileState profileState = context.read<ProfileBloc>().state;
-      if (profileState.status == ProfileStatus.success &&
-          profileState.user != null) {
-        context.read<TransferBloc>().add(
-          IncomingTransferListeningRequested(profileState.user!.id),
-        );
-        context.read<TransferBloc>().add(
-          TransferLifecycleListeningRequested(profileState.user!.id),
-        );
-      }
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Download')),
-      body: MultiBlocListener(
-        listeners: [
-          BlocListener<ProfileBloc, ProfileState>(
-            listenWhen: (previous, current) =>
-                previous.status != current.status ||
-                previous.user?.id != current.user?.id,
-            listener: (BuildContext context, ProfileState profileState) {
-              if (profileState.status == ProfileStatus.success &&
-                  profileState.user != null) {
-                context.read<TransferBloc>().add(
-                  IncomingTransferListeningRequested(profileState.user!.id),
-                );
-                context.read<TransferBloc>().add(
-                  TransferLifecycleListeningRequested(profileState.user!.id),
-                );
-              }
-            },
-          ),
-          BlocListener<TransferBloc, TransferState>(
-            listenWhen: (previous, current) =>
-                previous.uiWarningMessage != current.uiWarningMessage,
-            listener: (BuildContext context, TransferState state) {
-              if (state.uiWarningMessage == null) {
-                return;
-              }
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(SnackBar(content: Text(state.uiWarningMessage!)));
-              context.read<TransferBloc>().add(
-                const TransferUiEffectConsumed(),
-              );
-            },
-          ),
-        ],
-        child: BlocBuilder<TransferBloc, TransferState>(
-          builder: (BuildContext context, TransferState state) {
-            if (state.incomingTransfers.isEmpty) {
-              return const Center(child: Text('No incoming transfers.'));
-            }
-            return Column(
+      body: BlocBuilder<TransferBloc, TransferState>(
+        builder: (BuildContext context, TransferState state) {
+          if (state.incomingTransfers.isEmpty) {
+            return const Center(child: Text('No incoming transfers.'));
+          }
+          return Column(
               children: <Widget>[
                 if (state.showInAppProgress)
                   LinearProgressIndicator(value: state.progress),
@@ -205,8 +152,7 @@ class _DownloadPageState extends State<DownloadPage> {
                 ),
               ],
             );
-          },
-        ),
+        },
       ),
     );
   }

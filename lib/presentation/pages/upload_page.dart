@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../domain/entities/selected_transfer_file.dart';
 import '../../domain/entities/transfer_batch_progress.dart';
@@ -190,8 +191,12 @@ class _UploadFormState extends State<_UploadForm> {
         },
         child: BlocBuilder<TransferBloc, TransferState>(
           builder: (BuildContext context, TransferState transferState) {
-            final bool keyboardVisible =
-                MediaQuery.viewInsetsOf(context).bottom > 0;
+            final ProfileState profileState = context
+                .watch<ProfileBloc>()
+                .state;
+            final bool localOnlyMode =
+                profileState.status == ProfileStatus.success &&
+                (profileState.user?.id.startsWith('local_') ?? false);
             final List<SelectedTransferFile> selected =
                 transferState.selectedUploadFiles;
             final bool draftLocked =
@@ -202,12 +207,43 @@ class _UploadFormState extends State<_UploadForm> {
             final bool canPick = canEditSelection && !pickerBusy;
             final bool canSend =
                 canEditSelection &&
+                !localOnlyMode &&
                 selected.isNotEmpty &&
                 transferState.uploadRecipientCodeDraft.trim().isNotEmpty;
 
-            return Column(
+            final Widget content = Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
+                if (localOnlyMode) ...<Widget>[
+                  Material(
+                    color: theme.colorScheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Icon(
+                            Icons.cloud_off_rounded,
+                            color: theme.colorScheme.onTertiaryContainer,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Offline mode is active on this device. Cloud send '
+                              'is unavailable until authentication reconnects. '
+                              'Reopen the app when network/auth is available.',
+                              style: TextStyle(
+                                color: theme.colorScheme.onTertiaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 Card(
                   clipBehavior: Clip.antiAlias,
                   elevation: 0,
@@ -330,6 +366,16 @@ class _UploadFormState extends State<_UploadForm> {
                                 ),
                               ),
                             ),
+                            if (localOnlyMode) ...<Widget>[
+                              const SizedBox(height: 8),
+                              Text(
+                                'Cloud pairing is disabled in offline/local mode.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -376,77 +422,65 @@ class _UploadFormState extends State<_UploadForm> {
                     ),
                   ),
                 ],
-                if (!keyboardVisible) ...<Widget>[
-                  const SizedBox(height: 14),
-                  Row(
-                    children: <Widget>[
-                      Text(
-                        'Files',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
+                const SizedBox(height: 14),
+                Row(
+                  children: <Widget>[
+                    Text(
+                      'Files',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (selected.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${selected.length}',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.onSecondaryContainer,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      if (selected.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.secondaryContainer,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            '${selected.length}',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: theme.colorScheme.onSecondaryContainer,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: selected.isEmpty
+                      ? _UploadEmptyState(theme: theme)
+                      : ListView.separated(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          itemCount: selected.length,
+                          separatorBuilder: (BuildContext context, int index) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (BuildContext context, int index) {
+                            final SelectedTransferFile file = selected[index];
+                            final TransferFileProgress? progress =
+                                transferState.batchProgressByFileId[file.id];
+                            return _TransferFileRow(
+                              file: file,
+                              progress: progress,
+                              canRemove: canEditSelection,
+                              onRemove: () {
+                                context.read<TransferBloc>().add(
+                                  TransferUploadDraftFileRemoved(file.localPath),
+                                );
+                              },
+                            );
+                          },
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: selected.isEmpty
-                        ? _UploadEmptyState(theme: theme)
-                        : ListView.separated(
-                            itemCount: selected.length,
-                            separatorBuilder:
-                                (BuildContext context, int index) =>
-                                    const SizedBox(height: 8),
-                            itemBuilder: (BuildContext context, int index) {
-                              final SelectedTransferFile file = selected[index];
-                              final TransferFileProgress? progress =
-                                  transferState.batchProgressByFileId[file.id];
-                              return _TransferFileRow(
-                                file: file,
-                                progress: progress,
-                                canRemove: canEditSelection,
-                                onRemove: () {
-                                  context.read<TransferBloc>().add(
-                                    TransferUploadDraftFileRemoved(
-                                      file.localPath,
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                  ),
-                ] else ...<Widget>[
-                  const SizedBox(height: 8),
-                  Text(
-                    '${selected.length} file(s) selected',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+                ),
               ],
             );
+            return content;
           },
         ),
       ),
@@ -457,6 +491,10 @@ class _UploadFormState extends State<_UploadForm> {
     final TransferBloc bloc = context.read<TransferBloc>();
     bloc.add(const TransferUploadDraftPickerBusy(true));
     try {
+      final bool hasPermission = await _ensureMediaPermission(context);
+      if (!hasPermission || !context.mounted) {
+        return;
+      }
       FilePickerResult? result;
       try {
         result = await FilePicker.platform.pickFiles(allowMultiple: true);
@@ -493,6 +531,50 @@ class _UploadFormState extends State<_UploadForm> {
         bloc.add(const TransferUploadDraftPickerBusy(false));
       }
     }
+  }
+
+  Future<bool> _ensureMediaPermission(BuildContext context) async {
+    final Map<Permission, PermissionStatus> mediaStatuses = await <Permission>[
+      Permission.photos,
+      Permission.videos,
+      Permission.audio,
+    ].request();
+    final bool mediaGranted = mediaStatuses.values.any(
+      (PermissionStatus status) => status.isGranted,
+    );
+    if (mediaGranted) {
+      return true;
+    }
+
+    PermissionStatus storageStatus = await Permission.storage.status;
+    if (!storageStatus.isGranted) {
+      storageStatus = await Permission.storage.request();
+    }
+    if (storageStatus.isGranted) {
+      return true;
+    }
+
+    if (!context.mounted) {
+      return false;
+    }
+    final bool permanentlyDenied =
+        storageStatus.isPermanentlyDenied ||
+        mediaStatuses.values.any(
+          (PermissionStatus status) => status.isPermanentlyDenied,
+        );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          permanentlyDenied
+              ? 'Media access is disabled. Enable it in app settings to add files.'
+              : 'Media access is required to add files.',
+        ),
+        action: permanentlyDenied
+            ? SnackBarAction(label: 'Settings', onPressed: openAppSettings)
+            : null,
+      ),
+    );
+    return false;
   }
 
   void _startUpload(BuildContext context, TransferState transferState) {
@@ -540,7 +622,7 @@ class _TransferFileRow extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(16),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+        padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -574,9 +656,12 @@ class _TransferFileRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                Flexible(
+                const SizedBox(width: 12),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 58),
                   child: Text(
                     statusLabel,
+                    textAlign: TextAlign.end,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.labelLarge?.copyWith(
@@ -585,6 +670,7 @@ class _TransferFileRow extends StatelessWidget {
                     ),
                   ),
                 ),
+                const SizedBox(width: 10),
                 if (canRemove)
                   IconButton(
                     visualDensity: VisualDensity.compact,

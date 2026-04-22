@@ -11,12 +11,25 @@ class AuthStarted extends AuthEvent {
   const AuthStarted();
 }
 
-class AuthUserCreated extends AuthEvent {
-  const AuthUserCreated({required this.shortCode, required this.username});
+class AuthEmailOtpRequested extends AuthEvent {
+  const AuthEmailOtpRequested({required this.email});
 
-  final String shortCode;
-  final String username;
+  final String email;
 
   @override
-  List<Object?> get props => <Object?>[shortCode, username];
+  List<Object?> get props => <Object?>[email];
+}
+
+class AuthEmailOtpVerified extends AuthEvent {
+  const AuthEmailOtpVerified({required this.email, required this.otpCode});
+
+  final String email;
+  final String otpCode;
+
+  @override
+  List<Object?> get props => <Object?>[email, otpCode];
+}
+
+class AuthSignedOut extends AuthEvent {
+  const AuthSignedOut();
 }

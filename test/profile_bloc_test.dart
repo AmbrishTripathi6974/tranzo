@@ -127,12 +127,18 @@ class _SequentialAuthRepository implements AuthRepository {
   int _call = 0;
 
   @override
-  Future<UserEntity> createUser({
-    required String shortCode,
-    required String username,
+  Future<void> sendEmailOtp({required String email}) async {}
+
+  @override
+  Future<UserEntity> verifyEmailOtp({
+    required String email,
+    required String otpCode,
   }) {
     throw UnimplementedError();
   }
+
+  @override
+  Future<void> signOut() async {}
 
   @override
   Future<UserEntity> getCurrentUser() async {
@@ -148,12 +154,16 @@ class _FakeAuthRepository implements AuthRepository {
   final UserEntity user;
 
   @override
-  Future<UserEntity> createUser({
-    required String shortCode,
-    required String username,
-  }) {
-    throw UnimplementedError();
-  }
+  Future<void> sendEmailOtp({required String email}) async {}
+
+  @override
+  Future<UserEntity> verifyEmailOtp({
+    required String email,
+    required String otpCode,
+  }) async => user;
+
+  @override
+  Future<void> signOut() async {}
 
   @override
   Future<UserEntity> getCurrentUser() async => user;
@@ -166,12 +176,16 @@ class _CountingDelayedAuthRepository implements AuthRepository {
   int callCount = 0;
 
   @override
-  Future<UserEntity> createUser({
-    required String shortCode,
-    required String username,
-  }) {
-    throw UnimplementedError();
-  }
+  Future<void> sendEmailOtp({required String email}) async {}
+
+  @override
+  Future<UserEntity> verifyEmailOtp({
+    required String email,
+    required String otpCode,
+  }) async => user;
+
+  @override
+  Future<void> signOut() async {}
 
   @override
   Future<UserEntity> getCurrentUser() async {
@@ -183,12 +197,18 @@ class _CountingDelayedAuthRepository implements AuthRepository {
 
 class _ThrowingAuthRepository implements AuthRepository {
   @override
-  Future<UserEntity> createUser({
-    required String shortCode,
-    required String username,
+  Future<void> sendEmailOtp({required String email}) async {}
+
+  @override
+  Future<UserEntity> verifyEmailOtp({
+    required String email,
+    required String otpCode,
   }) {
-    throw UnimplementedError();
+    throw Exception('verify failed');
   }
+
+  @override
+  Future<void> signOut() async {}
 
   @override
   Future<UserEntity> getCurrentUser() async {

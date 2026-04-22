@@ -9,6 +9,7 @@ class BottomNav extends StatelessWidget {
   static const List<String> _paths = <String>[
     '/home',
     '/transfer',
+    '/inbox',
     '/history',
     '/profile',
   ];
@@ -35,6 +36,10 @@ class BottomNav extends StatelessWidget {
             label: 'Transfer',
           ),
           NavigationDestination(
+            icon: Icon(Icons.inbox_outlined),
+            label: 'Inbox',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.history_outlined),
             label: 'History',
           ),
@@ -52,10 +57,13 @@ class BottomNav extends StatelessWidget {
       return 1;
     }
     if (location.startsWith('/history')) {
-      return 2;
+      return 3;
     }
     if (location.startsWith('/profile')) {
-      return 3;
+      return 4;
+    }
+    if (location.startsWith('/inbox')) {
+      return 2;
     }
     return 0;
   }

@@ -81,7 +81,7 @@ create policy "transfer_chunks_insert_participant"
     and exists (
       select 1
       from public.transfer_sessions ts
-      where ts.id::text = split_part(name, '/', 1)
+      where ts.transfer_id = split_part(name, '/', 1)
         and (auth.uid() = ts.sender_id or auth.uid() = ts.receiver_id)
     )
   );
@@ -95,7 +95,7 @@ create policy "transfer_chunks_select_participant"
     and exists (
       select 1
       from public.transfer_sessions ts
-      where ts.id::text = split_part(name, '/', 1)
+      where ts.transfer_id = split_part(name, '/', 1)
         and (auth.uid() = ts.sender_id or auth.uid() = ts.receiver_id)
     )
   );
@@ -109,7 +109,7 @@ create policy "transfer_chunks_update_participant"
     and exists (
       select 1
       from public.transfer_sessions ts
-      where ts.id::text = split_part(name, '/', 1)
+      where ts.transfer_id = split_part(name, '/', 1)
         and (auth.uid() = ts.sender_id or auth.uid() = ts.receiver_id)
     )
   )
@@ -118,7 +118,7 @@ create policy "transfer_chunks_update_participant"
     and exists (
       select 1
       from public.transfer_sessions ts
-      where ts.id::text = split_part(name, '/', 1)
+      where ts.transfer_id = split_part(name, '/', 1)
         and (auth.uid() = ts.sender_id or auth.uid() = ts.receiver_id)
     )
   );
