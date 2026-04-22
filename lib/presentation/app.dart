@@ -112,7 +112,15 @@ class App extends StatelessWidget {
                       authState.user != null) {
                     return child ?? const SizedBox.shrink();
                   }
-                  return const AuthGatePage();
+                  // Host auth UI in a Navigator so EditableText has an Overlay
+                  // ancestor while the app is unauthenticated.
+                  return Navigator(
+                    onGenerateRoute: (RouteSettings _) {
+                      return MaterialPageRoute<void>(
+                        builder: (_) => const AuthGatePage(),
+                      );
+                    },
+                  );
                 },
               );
             },

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -88,7 +89,7 @@ abstract interface class BackgroundTransferRuntimeService {
     required int progressPercent,
   });
 
-  Future<void> stopActiveTransfer();
+  Future<void> stopActiveTransfer({String? transferId});
 
   Future<void> scheduleRetry({
     required String transferId,
@@ -124,7 +125,7 @@ class NoopBackgroundTransferRuntimeService
   }) async {}
 
   @override
-  Future<void> stopActiveTransfer() async {}
+  Future<void> stopActiveTransfer({String? transferId}) async {}
 
   @override
   Future<void> updateActiveTransfer({
@@ -136,7 +137,10 @@ class NoopBackgroundTransferRuntimeService
 
 class AndroidBackgroundTransferRuntimeService
     implements BackgroundTransferRuntimeService {
-  const AndroidBackgroundTransferRuntimeService();
+  AndroidBackgroundTransferRuntimeService();
+
+  final Set<String> _activeTransferIds = <String>{};
+  String? _lastRenderedNotification;
 
   @override
   Future<void> initialize() async {
@@ -161,6 +165,7 @@ class AndroidBackgroundTransferRuntimeService
         eventAction: ForegroundTaskEventAction.nothing(),
         autoRunOnBoot: false,
         autoRunOnMyPackageReplaced: false,
+        allowAutoRestart: false,
         allowWakeLock: true,
         allowWifiLock: true,
       ),
@@ -179,6 +184,8 @@ class AndroidBackgroundTransferRuntimeService
       return;
     }
 
+    _activeTransferIds.add(transferId);
+
     final bool running = await FlutterForegroundTask.isRunningService;
     if (running) {
       await updateActiveTransfer(
@@ -189,12 +196,24 @@ class AndroidBackgroundTransferRuntimeService
       return;
     }
 
-    await FlutterForegroundTask.startService(
+    final String notificationText =
+        '${_sanitizeFileName(fileName)} - $progressPercent%';
+    final dynamic startResult = await FlutterForegroundTask.startService(
       serviceId: 2322,
       notificationTitle: 'Tranzo transfer',
-      notificationText: '${_sanitizeFileName(fileName)} - $progressPercent%',
+      notificationText: notificationText,
       callback: transferForegroundStartCallback,
     );
+    switch (startResult) {
+      case ServiceRequestFailure(:final error):
+        developer.log(
+          'foreground_service_start_failed',
+          name: 'transfer',
+          error: error,
+        );
+      default:
+        _lastRenderedNotification = notificationText;
+    }
   }
 
   @override
@@ -206,6 +225,7 @@ class AndroidBackgroundTransferRuntimeService
     if (kIsWeb || !Platform.isAndroid) {
       return;
     }
+    _activeTransferIds.add(transferId);
 
     final bool running = await FlutterForegroundTask.isRunningService;
     if (!running) {
@@ -217,20 +237,77 @@ class AndroidBackgroundTransferRuntimeService
       return;
     }
 
+    final String notificationText =
+        '${_sanitizeFileName(fileName)} - $progressPercent%';
+    if (_lastRenderedNotification == notificationText) {
+      return;
+    }
+
     await FlutterForegroundTask.updateService(
       notificationTitle: 'Tranzo transfer',
-      notificationText: '${_sanitizeFileName(fileName)} - $progressPercent%',
+      notificationText: notificationText,
     );
+    _lastRenderedNotification = notificationText;
   }
 
   @override
-  Future<void> stopActiveTransfer() async {
+  Future<void> stopActiveTransfer({String? transferId}) async {
     if (kIsWeb || !Platform.isAndroid) {
       return;
     }
+    if (transferId != null && transferId.isNotEmpty) {
+      _activeTransferIds.remove(transferId);
+    } else {
+      _activeTransferIds.clear();
+    }
+    if (_activeTransferIds.isNotEmpty) {
+      return;
+    }
+
     final bool running = await FlutterForegroundTask.isRunningService;
-    if (running) {
-      await FlutterForegroundTask.stopService();
+    if (!running) {
+      _lastRenderedNotification = null;
+      return;
+    }
+
+    final dynamic stopResult = await FlutterForegroundTask.stopService();
+    switch (stopResult) {
+      case ServiceRequestSuccess():
+        _lastRenderedNotification = null;
+        return;
+      case ServiceRequestFailure(:final error):
+        developer.log(
+          'foreground_service_stop_failed',
+          name: 'transfer',
+          error: error,
+        );
+      default:
+        developer.log(
+          'foreground_service_stop_unknown_result',
+          name: 'transfer',
+          error: stopResult,
+        );
+    }
+
+    // Fallback path for transient failures from the platform channel.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    final bool stillRunning = await FlutterForegroundTask.isRunningService;
+    if (!stillRunning) {
+      _lastRenderedNotification = null;
+      return;
+    }
+
+    final dynamic secondStopResult = await FlutterForegroundTask.stopService();
+    switch (secondStopResult) {
+      case ServiceRequestFailure(:final error):
+        developer.log(
+          'foreground_service_stop_retry_failed',
+          name: 'transfer',
+          error: error,
+        );
+      default:
+        _lastRenderedNotification = null;
+        break;
     }
   }
 

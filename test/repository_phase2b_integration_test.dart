@@ -6,10 +6,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:isar_community/isar.dart';
 import 'package:tranzo/core/database/isar/collections/file_collection.dart';
 import 'package:tranzo/core/database/isar/collections/queued_transfer_collection.dart';
+import 'package:tranzo/core/database/isar/collections/sender_trust_collection.dart';
 import 'package:tranzo/core/database/isar/collections/transfer_collection.dart';
 import 'package:tranzo/core/database/isar/collections/transfer_progress_collection.dart';
 import 'package:tranzo/core/database/isar/collections/user_collection.dart';
 import 'package:tranzo/core/network/network_info.dart';
+import 'package:tranzo/core/errors/exceptions.dart';
 import 'package:tranzo/core/security/sha256_hasher.dart';
 import 'package:tranzo/core/services/background_transfer_runtime_service.dart';
 import 'package:tranzo/core/services/realtime_service.dart';
@@ -20,7 +22,9 @@ import 'package:tranzo/data/datasources/remote/transfer_remote_data_source.dart'
 import 'package:tranzo/data/models/transfer_task_model.dart';
 import 'package:tranzo/data/repositories/transfer_repository_impl.dart';
 import 'package:tranzo/domain/entities/selected_transfer_file.dart';
+import 'package:tranzo/domain/entities/incoming_transfer_offer.dart';
 import 'package:tranzo/domain/entities/transfer_batch_progress.dart';
+import 'package:tranzo/domain/entities/transfer_lifecycle_signal.dart';
 import 'package:tranzo/transfer_engine/chunking/chunk_manager.dart';
 import 'package:tranzo/transfer_engine/download/download_manager.dart';
 import 'package:tranzo/transfer_engine/retry/retry_queue.dart';
@@ -47,8 +51,8 @@ Future<void> main() async {
 
     Future<void> buildRepository({
       required bool connected,
-      Duration networkWaitTimeout = const Duration(minutes: 2),
-      Duration networkWaitPollInterval = const Duration(milliseconds: 10),
+      Duration incomingPollInterval = const Duration(milliseconds: 40),
+      Duration signalPollInterval = const Duration(milliseconds: 40),
     }) async {
       tempDir = await Directory.systemTemp.createTemp('tranzo_phase2b_');
       isar = await Isar.open(
@@ -58,6 +62,7 @@ Future<void> main() async {
           FileCollectionSchema,
           TransferProgressCollectionSchema,
           QueuedTransferCollectionSchema,
+          SenderTrustCollectionSchema,
         ],
         directory: tempDir!.path,
         name: 'phase2b',
@@ -94,8 +99,8 @@ Future<void> main() async {
         backgroundRuntimeService: runtimeService,
         networkInfo: networkInfo,
         sha256Hasher: hasher,
-        networkWaitTimeout: networkWaitTimeout,
-        networkWaitPollInterval: networkWaitPollInterval,
+        incomingPollInterval: incomingPollInterval,
+        signalPollInterval: signalPollInterval,
       );
     }
 
@@ -109,74 +114,189 @@ Future<void> main() async {
     test(
       'cancel during chunk execution marks file as failed and cancels retry',
       () async {
-      await buildRepository(connected: true);
-      final List<TransferBatchProgress> emitted = <TransferBatchProgress>[];
-      final Stream<TransferBatchProgress> stream = repository.sendFilesInBatch(
-        senderId: 'sender-1',
-        recipientCode: 'ABC123',
-        files: <SelectedTransferFile>[
-          SelectedTransferFile(
-            id: 'file-1',
-            fileName: 'payload.bin',
-            localPath: sourceFile.path,
-            sizeBytes: await sourceFile.length(),
-          ),
-        ],
-      );
+        await buildRepository(connected: true);
+        final List<TransferBatchProgress> emitted = <TransferBatchProgress>[];
+        final Stream<TransferBatchProgress> stream = repository
+            .sendFilesInBatch(
+              senderId: 'sender-1',
+              recipientCode: 'ABC123',
+              files: <SelectedTransferFile>[
+                SelectedTransferFile(
+                  id: 'file-1',
+                  fileName: 'payload.bin',
+                  localPath: sourceFile.path,
+                  sizeBytes: await sourceFile.length(),
+                ),
+              ],
+            );
 
-      final Future<void> consume = stream.forEach(emitted.add);
-      final String transferId = await remoteDataSource.firstChunkTransferId.future;
-      await repository.cancelTransfer(transferId);
-      remoteDataSource.allowFirstChunk.complete();
-      await consume;
+        final Future<void> consume = stream.forEach(emitted.add);
+        final String transferId =
+            await remoteDataSource.firstChunkTransferId.future;
+        await repository.cancelTransfer(transferId);
+        remoteDataSource.allowFirstChunk.complete();
+        await consume;
 
-      final TransferFileProgress fileProgress = emitted.last.files.single;
-      expect(fileProgress.status, TransferFileProgressStatus.failed);
-      expect(runtimeService.cancelledRetryIds, contains(transferId));
+        final TransferFileProgress fileProgress = emitted.last.files.single;
+        expect(fileProgress.status, TransferFileProgressStatus.failed);
+        expect(runtimeService.cancelledRetryIds, contains(transferId));
       },
       skip: isarRuntimeAvailable
           ? null
           : 'Isar native core unavailable (offline, skip env, or download failed). '
-              'Run: dart run tool/ensure_isar_test_binary.dart',
+                'Run: dart run tool/ensure_isar_test_binary.dart',
     );
 
     test(
       'network wait timeout avoids chunk upload and reports failed progress',
       () async {
-      await buildRepository(
-        connected: false,
-        networkWaitTimeout: const Duration(milliseconds: 40),
-        networkWaitPollInterval: const Duration(milliseconds: 5),
-      );
-      final List<TransferBatchProgress> emitted = <TransferBatchProgress>[];
-      await repository
-          .sendFilesInBatch(
-            senderId: 'sender-1',
-            recipientCode: 'ABC123',
-            files: <SelectedTransferFile>[
-              SelectedTransferFile(
-                id: 'file-2',
-                fileName: 'payload.bin',
-                localPath: sourceFile.path,
-                sizeBytes: await sourceFile.length(),
-              ),
-            ],
-          )
-          .forEach(emitted.add);
+        await buildRepository(connected: false);
+        final List<TransferBatchProgress> emitted = <TransferBatchProgress>[];
+        await repository
+            .sendFilesInBatch(
+              senderId: 'sender-1',
+              recipientCode: 'ABC123',
+              files: <SelectedTransferFile>[
+                SelectedTransferFile(
+                  id: 'file-2',
+                  fileName: 'payload.bin',
+                  localPath: sourceFile.path,
+                  sizeBytes: await sourceFile.length(),
+                ),
+              ],
+            )
+            .forEach(emitted.add);
 
-      expect(remoteDataSource.uploadChunkCalls, 0);
-      expect(emitted.last.files.single.status, TransferFileProgressStatus.failed);
+        expect(remoteDataSource.uploadChunkCalls, 0);
+        expect(
+          emitted.last.files.single.status,
+          TransferFileProgressStatus.failed,
+        );
       },
       skip: isarRuntimeAvailable
           ? null
           : 'Isar native core unavailable (offline, skip env, or download failed). '
-              'Run: dart run tool/ensure_isar_test_binary.dart',
+                'Run: dart run tool/ensure_isar_test_binary.dart',
+    );
+
+    test(
+      'listenIncomingTransfers falls back to polling when realtime is unavailable',
+      () async {
+        await buildRepository(connected: true);
+        realtimeService.throwOnListenTransferSignals = true;
+        transferService.incomingRowsByReceiver['receiver-1'] =
+            <TransferSessionRecord>[
+              _fakeTransferSession(
+                transferId: 't-fallback-1',
+                senderId: 'sender-a',
+                receiverId: 'receiver-1',
+                status: 'uploading',
+                fileId: 'file-a',
+                fileName: 'payload.bin',
+                fileHash: 'hash-a',
+              ),
+            ];
+
+        final IncomingTransferOffer offer = await repository
+            .listenIncomingTransfers(receiverId: 'receiver-1')
+            .first
+            .timeout(const Duration(seconds: 1));
+        expect(offer.transferId, 't-fallback-1');
+        expect(offer.fileId, 'file-a');
+      },
+      skip: isarRuntimeAvailable
+          ? null
+          : 'Isar native core unavailable (offline, skip env, or download failed). '
+                'Run: dart run tool/ensure_isar_test_binary.dart',
+    );
+
+    test(
+      'listenIncomingTransfers de-duplicates same offer across realtime and polling',
+      () async {
+        await buildRepository(connected: true);
+        final TransferSessionRecord row = _fakeTransferSession(
+          transferId: 't-dedupe-1',
+          senderId: 'sender-a',
+          receiverId: 'receiver-1',
+          status: 'uploading',
+          fileId: 'file-dedupe',
+          fileName: 'payload.bin',
+          fileHash: 'hash-dedupe',
+        );
+        transferService.incomingRowsByReceiver['receiver-1'] =
+            <TransferSessionRecord>[row];
+
+        final List<IncomingTransferOffer> offers = <IncomingTransferOffer>[];
+        final StreamSubscription<IncomingTransferOffer> subscription =
+            repository
+                .listenIncomingTransfers(receiverId: 'receiver-1')
+                .listen(offers.add);
+
+        realtimeService.emitSignal(
+          TransferLifecycleSignal(
+            transferId: row.transferId,
+            senderId: row.senderId,
+            receiverId: row.receiverId,
+            event: TransferLifecycleEvent.transferStarted,
+            emittedAt: DateTime.now(),
+            fileId: 'file-dedupe',
+            fileName: 'payload.bin',
+            fileSize: 128,
+            fileHash: 'hash-dedupe',
+            storagePath: '${row.transferId}/file-dedupe',
+          ),
+        );
+
+        await Future<void>.delayed(const Duration(milliseconds: 180));
+        await subscription.cancel();
+        expect(offers.length, 1);
+        expect(offers.single.transferId, 't-dedupe-1');
+      },
+      skip: isarRuntimeAvailable
+          ? null
+          : 'Isar native core unavailable (offline, skip env, or download failed). '
+                'Run: dart run tool/ensure_isar_test_binary.dart',
+    );
+
+    test(
+      'listenTransferSignals falls back to polled status transitions',
+      () async {
+        await buildRepository(connected: true);
+        realtimeService.throwOnListenTransferSignals = true;
+        transferService.participantRowsByUser['sender-1'] =
+            <TransferSessionRecord>[
+              _fakeTransferSession(
+                transferId: 't-signal-1',
+                senderId: 'sender-1',
+                receiverId: 'receiver-1',
+                status: 'completed',
+                fileId: 'file-signal',
+                fileName: 'payload.bin',
+                fileHash: 'hash-signal',
+              ),
+            ];
+
+        final TransferLifecycleSignalEntity signal = await repository
+            .listenTransferSignals(userId: 'sender-1')
+            .first
+            .timeout(const Duration(seconds: 1));
+        expect(signal.transferId, 't-signal-1');
+        expect(signal.event, TransferLifecycleEventType.transferCompleted);
+      },
+      skip: isarRuntimeAvailable
+          ? null
+          : 'Isar native core unavailable (offline, skip env, or download failed). '
+                'Run: dart run tool/ensure_isar_test_binary.dart',
     );
   });
 }
 
 class _FakeTransferService implements TransferService {
   final List<String> updatedTransferIds = <String>[];
+  final Map<String, List<TransferSessionRecord>> incomingRowsByReceiver =
+      <String, List<TransferSessionRecord>>{};
+  final Map<String, List<TransferSessionRecord>> participantRowsByUser =
+      <String, List<TransferSessionRecord>>{};
 
   @override
   String? currentAuthenticatedUserId() => 'sender-1';
@@ -204,7 +324,8 @@ class _FakeTransferService implements TransferService {
   }
 
   @override
-  Future<String?> resolveRecipientIdByCode(String rawCode) async => 'receiver-1';
+  Future<String?> resolveRecipientIdByCode(String rawCode) async =>
+      'receiver-1';
 
   @override
   Future<void> updateTransferStatus({
@@ -215,8 +336,15 @@ class _FakeTransferService implements TransferService {
   }
 
   @override
-  Future<List<TransferSessionRecord>> getIncomingTransfers(String receiverId) async =>
-      const <TransferSessionRecord>[];
+  Future<List<TransferSessionRecord>> getIncomingTransfers(
+    String receiverId,
+  ) async =>
+      incomingRowsByReceiver[receiverId] ?? const <TransferSessionRecord>[];
+
+  @override
+  Future<List<TransferSessionRecord>> getParticipantTransfers(
+    String userId,
+  ) async => participantRowsByUser[userId] ?? const <TransferSessionRecord>[];
 
   @override
   Future<void> uploadTransferChunk({
@@ -235,6 +363,14 @@ class _FakeTransferService implements TransferService {
 }
 
 class _FakeRealtimeService implements RealtimeService {
+  final StreamController<TransferLifecycleSignal> transferSignalsController =
+      StreamController<TransferLifecycleSignal>.broadcast();
+  bool throwOnListenTransferSignals = false;
+
+  void emitSignal(TransferLifecycleSignal signal) {
+    transferSignalsController.add(signal);
+  }
+
   @override
   Future<void> sendTransferSignal({
     required TransferLifecycleSignal signal,
@@ -245,7 +381,12 @@ class _FakeRealtimeService implements RealtimeService {
   Stream<TransferLifecycleSignal> listenTransferSignals({
     required String receiverId,
     String channelPrefix = 'transfer-signals',
-  }) => const Stream<TransferLifecycleSignal>.empty();
+  }) {
+    if (throwOnListenTransferSignals) {
+      throw const AppException('realtime unavailable');
+    }
+    return transferSignalsController.stream;
+  }
 
   @override
   Future<void> sendRealtimeEvent({
@@ -260,6 +401,30 @@ class _FakeRealtimeService implements RealtimeService {
     String channelName = 'incoming-transfers',
     String event = 'incoming_transfer',
   }) => const Stream<Map<String, dynamic>>.empty();
+}
+
+TransferSessionRecord _fakeTransferSession({
+  required String transferId,
+  required String senderId,
+  required String receiverId,
+  required String status,
+  required String fileId,
+  required String fileName,
+  required String fileHash,
+}) {
+  return TransferSessionRecord.fromRow(<String, dynamic>{
+    'id': transferId,
+    'transfer_id': transferId,
+    'sender_id': senderId,
+    'receiver_id': receiverId,
+    'status': status,
+    'file_id': fileId,
+    'file_name': fileName,
+    'file_size': 128,
+    'file_hash': fileHash,
+    'storage_path': '$transferId/$fileId',
+    'created_at': DateTime.now().toIso8601String(),
+  });
 }
 
 class _FakeRemoteDataSource implements TransferRemoteDataSource {
@@ -296,7 +461,8 @@ class _FakeRemoteDataSource implements TransferRemoteDataSource {
   }) async => <int>[];
 }
 
-class _FakeBackgroundRuntimeService implements BackgroundTransferRuntimeService {
+class _FakeBackgroundRuntimeService
+    implements BackgroundTransferRuntimeService {
   final List<String> cancelledRetryIds = <String>[];
 
   @override
@@ -317,7 +483,7 @@ class _FakeBackgroundRuntimeService implements BackgroundTransferRuntimeService 
   }) async {}
 
   @override
-  Future<void> stopActiveTransfer() async {}
+  Future<void> stopActiveTransfer({String? transferId}) async {}
 
   @override
   Future<void> scheduleRetry({

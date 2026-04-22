@@ -66,35 +66,38 @@ void main() {
       await bloc.close();
     });
 
-    test('bloc surfaces network timeout style failures during batch upload', () async {
-      final _ReliabilityFakeTransferRepository repository =
-          _ReliabilityFakeTransferRepository()
-            ..failBatchWith = const AppException(
-              'Network unavailable for too long.',
-              code: AppErrorCode.chunkTransferFailed,
-            );
-      final TransferBloc bloc = _buildBloc(repository);
+    test(
+      'bloc surfaces network timeout style failures during batch upload',
+      () async {
+        final _ReliabilityFakeTransferRepository repository =
+            _ReliabilityFakeTransferRepository()
+              ..failBatchWith = const AppException(
+                'Network unavailable for too long.',
+                code: AppErrorCode.chunkTransferFailed,
+              );
+        final TransferBloc bloc = _buildBloc(repository);
 
-      bloc.add(
-        TransferBatchUploadRequested(
-          senderId: 'sender-1',
-          recipientCode: 'ABC123',
-          files: const <SelectedTransferFile>[
-            SelectedTransferFile(
-              id: 'f1',
-              fileName: 'doc.txt',
-              localPath: '/tmp/doc.txt',
-              sizeBytes: 100,
-            ),
-          ],
-        ),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+        bloc.add(
+          TransferBatchUploadRequested(
+            senderId: 'sender-1',
+            recipientCode: 'ABC123',
+            files: const <SelectedTransferFile>[
+              SelectedTransferFile(
+                id: 'f1',
+                fileName: 'doc.txt',
+                localPath: '/tmp/doc.txt',
+                sizeBytes: 100,
+              ),
+            ],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      expect(bloc.state.status, TransferStatus.error);
-      expect(bloc.state.errorMessage, contains('Network unavailable'));
-      await bloc.close();
-    });
+        expect(bloc.state.status, TransferStatus.error);
+        expect(bloc.state.errorMessage, contains('Network unavailable'));
+        await bloc.close();
+      },
+    );
   });
 }
 

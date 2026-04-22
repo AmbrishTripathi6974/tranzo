@@ -9,7 +9,8 @@ import 'domain/usecases/resume_incomplete_transfers_usecase.dart';
 import 'presentation/app.dart';
 
 Future<void> main() async {
-  final WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  final WidgetsBinding widgetsBinding =
+      WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   await dotenv.load(fileName: '.env');
   await TranzoSupabase.initializeFromEnvironment();
@@ -19,6 +20,5 @@ Future<void> main() async {
     await sl<ResumeIncompleteTransfersUseCase>()(transferId: transferId);
   });
   await sl<BackgroundTransferRuntimeService>().initialize();
-  await sl<ResumeIncompleteTransfersUseCase>()();
   runApp(const App());
 }

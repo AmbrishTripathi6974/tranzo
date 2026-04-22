@@ -28,13 +28,16 @@ class TransferService {
   Future<TransferSessionRecord> createTransferSession(
     TransferSessionPayload payload,
   ) async {
+    await _ensureSenderMatchesAuthenticated(payload.senderId);
     try {
       final Map<String, dynamic> row = await _insertTransferSession(payload);
       return TransferSessionRecord.fromRow(row);
     } on PostgrestException catch (e) {
       if (_isRlsViolation(e.message) && await _tryRefreshSession()) {
         try {
-          final Map<String, dynamic> row = await _insertTransferSession(payload);
+          final Map<String, dynamic> row = await _insertTransferSession(
+            payload,
+          );
           return TransferSessionRecord.fromRow(row);
         } on PostgrestException catch (retryError) {
           throw _mapPostgrestException(
@@ -177,6 +180,29 @@ class TransferService {
     }
   }
 
+  Future<List<TransferSessionRecord>> getParticipantTransfers(
+    String userId,
+  ) async {
+    try {
+      final List<dynamic> rows = await _client
+          .from(_transferSessionsTable)
+          .select()
+          .or('receiver_id.eq.$userId,sender_id.eq.$userId')
+          .order('created_at', ascending: false);
+      return rows
+          .map(
+            (dynamic row) =>
+                TransferSessionRecord.fromRow(row as Map<String, dynamic>),
+          )
+          .toList(growable: false);
+    } on PostgrestException catch (e) {
+      throw _mapPostgrestException(
+        e,
+        fallbackMessage: 'Failed to load transfer session updates.',
+      );
+    }
+  }
+
   Future<void> updateTransferStatus({
     required String transferId,
     required String status,
@@ -234,9 +260,19 @@ class TransferService {
     required String fallbackMessage,
   }) {
     final String message = exception.message;
+    final String normalized = message.toLowerCase();
+    if (normalized.contains('jwt') ||
+        normalized.contains('token') ||
+        normalized.contains('unauthorized') ||
+        normalized.contains('401')) {
+      return const AppException(
+        'Cloud auth session expired before upload. Sign in again and retry.',
+        code: AppErrorCode.invalidRecipientCode,
+      );
+    }
     if (message.toLowerCase().contains(_storageObjectsRlsHint)) {
       return const AppException(
-        'Cloud storage policy blocked upload. Reauthenticate on sender and retry.',
+        'Cloud storage policy blocked upload. Verify transfer storage policies and sender session, then retry.',
       );
     }
     return AppException(message.isEmpty ? fallbackMessage : message);
@@ -290,6 +326,26 @@ class TransferService {
     } catch (_) {
       return null;
     }
+  }
+
+  Future<void> _ensureSenderMatchesAuthenticated(String senderId) async {
+    if (senderId.trim().isEmpty) {
+      return;
+    }
+    final String? currentUserId = _client.auth.currentUser?.id;
+    if (currentUserId == senderId) {
+      return;
+    }
+    if (await _tryRefreshSession()) {
+      final String? refreshedUserId = _client.auth.currentUser?.id;
+      if (refreshedUserId == senderId) {
+        return;
+      }
+    }
+    throw const AppException(
+      'Cloud session user does not match sender identity. Reauthenticate sender and retry.',
+      code: AppErrorCode.invalidRecipientCode,
+    );
   }
 
   bool _sessionLikelyExpired(Session? session) {

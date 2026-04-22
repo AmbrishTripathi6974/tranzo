@@ -228,7 +228,8 @@ Future<void> configureDependencies() async {
       prepareBatchUploadUi: sl<PrepareBatchUploadUiUseCase>(),
       validateTransferBatch: sl<ValidateTransferBatchUseCase>(),
       prepareIncomingTransfer: sl<PrepareIncomingTransferUseCase>(),
-      mobileDataLargeUploadConsent: sl<MobileDataLargeUploadConsentRepository>(),
+      mobileDataLargeUploadConsent:
+          sl<MobileDataLargeUploadConsentRepository>(),
     ),
   );
 }

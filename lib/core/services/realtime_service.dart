@@ -124,7 +124,7 @@ class RealtimeService {
     try {
       await channel.httpSend(event: event, payload: payload);
     } catch (e) {
-      throw AppException('Realtime broadcast failed: $e');
+      throw AppException('Realtime broadcast unavailable: $e');
     }
   }
 
@@ -174,7 +174,13 @@ class RealtimeService {
         },
       );
     }
-    channel.subscribe();
+    try {
+      channel.subscribe();
+    } catch (_) {
+      controller.addError(
+        const AppException('Realtime lifecycle subscription unavailable.'),
+      );
+    }
 
     controller.onCancel = () async {
       await channel.unsubscribe();
@@ -213,8 +219,13 @@ class RealtimeService {
         }
       },
     );
-
-    channel.subscribe();
+    try {
+      channel.subscribe();
+    } catch (_) {
+      controller.addError(
+        const AppException('Realtime incoming subscription unavailable.'),
+      );
+    }
 
     controller.onCancel = () async {
       await channel.unsubscribe();

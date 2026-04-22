@@ -142,10 +142,12 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
         ),
       );
     } catch (error) {
+      final String displayError = _toDisplayError(error);
       emit(
         state.copyWith(
           status: TransferStatus.error,
-          errorMessage: _toDisplayError(error),
+          errorMessage: displayError,
+          uiWarningMessage: displayError,
         ),
       );
     }
@@ -292,6 +294,9 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     TransferUploadRecipientDraftChanged event,
     Emitter<TransferState> emit,
   ) {
+    if (event.draft == state.uploadRecipientCodeDraft) {
+      return;
+    }
     emit(state.copyWith(uploadRecipientCodeDraft: event.draft));
   }
 
@@ -347,7 +352,8 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
                         .reduce((double a, double b) => a + b) /
                     progress.files.length;
           final bool allFailed = totalFiles > 0 && failedCount == totalFiles;
-          final bool allCompleted = totalFiles > 0 && completedCount == totalFiles;
+          final bool allCompleted =
+              totalFiles > 0 && completedCount == totalFiles;
           final bool hasPartialFailures =
               failedCount > 0 && !allFailed && completedCount > 0;
           String? firstFailureMessage;
@@ -362,7 +368,9 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
           return state.copyWith(
             status: allFailed
                 ? TransferStatus.error
-                : (allCompleted ? TransferStatus.success : TransferStatus.loading),
+                : (allCompleted
+                      ? TransferStatus.success
+                      : TransferStatus.loading),
             progress: total,
             batchSessionId: progress.sessionId,
             batchProgressByFileId: byId,
@@ -371,9 +379,12 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
                       'Transfer failed before upload could start. Check connection and cloud permissions, then retry.')
                 : null,
             clearErrorMessage: !allFailed,
-            uiWarningMessage: hasPartialFailures
-                ? 'Some files failed to upload. Review file statuses and retry.'
-                : null,
+            uiWarningMessage: allFailed
+                ? (firstFailureMessage ??
+                      'Transfer failed before upload could start. Please fix the issue and tap Transfer again.')
+                : (hasPartialFailures
+                      ? 'Some files failed to upload. Review file statuses and retry.'
+                      : null),
             clearUiWarningMessage: false,
             selectedUploadFiles: allCompleted
                 ? const <SelectedTransferFile>[]
@@ -386,10 +397,12 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
         },
       );
     } catch (error) {
+      final String displayError = _toDisplayError(error);
       emit(
         state.copyWith(
           status: TransferStatus.error,
-          errorMessage: _toDisplayError(error),
+          errorMessage: displayError,
+          uiWarningMessage: displayError,
         ),
       );
     }
@@ -423,6 +436,13 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     TransferLifecycleSignalReceived event,
     Emitter<TransferState> emit,
   ) {
+    final TransferLifecycleSignalEntity? previousSignal =
+        state.lifecycleSignalsByTransferId[event.signal.transferId];
+    if (previousSignal != null &&
+        previousSignal.event == event.signal.event &&
+        !event.signal.emittedAt.isAfter(previousSignal.emittedAt)) {
+      return;
+    }
     final Map<String, TransferLifecycleSignalEntity> nextSignals =
         <String, TransferLifecycleSignalEntity>{
           ...state.lifecycleSignalsByTransferId,

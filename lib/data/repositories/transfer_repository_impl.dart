@@ -17,6 +17,7 @@ import '../../domain/repositories/transfer_repository.dart';
 import '../../core/database/isar/collections/transfer_collection.dart';
 import '../../core/database/isar/collections/queued_transfer_collection.dart';
 import '../../core/database/isar/collections/sender_trust_collection.dart';
+import '../../core/database/isar/collections/user_collection.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/exceptions.dart';
 import '../../core/network/network_info.dart';
@@ -50,8 +51,9 @@ class TransferRepositoryImpl implements TransferRepository {
     required BackgroundTransferRuntimeService backgroundRuntimeService,
     required NetworkInfo networkInfo,
     required Sha256Hasher sha256Hasher,
-    Duration networkWaitTimeout = const Duration(minutes: 2),
-    Duration networkWaitPollInterval = const Duration(seconds: 2),
+    Duration incomingPollInterval = const Duration(seconds: 3),
+    Duration signalPollInterval = const Duration(seconds: 2),
+    Duration pollingErrorBackoffMax = const Duration(seconds: 30),
   }) : _remoteDataSource = remoteDataSource,
        _localDataSource = localDataSource,
        _transferService = transferService,
@@ -64,13 +66,13 @@ class TransferRepositoryImpl implements TransferRepository {
        _backgroundRuntimeService = backgroundRuntimeService,
        _networkInfo = networkInfo,
        _sha256Hasher = sha256Hasher,
-       _networkWaitTimeout = networkWaitTimeout,
-       _networkWaitPollInterval = networkWaitPollInterval {
+       _incomingPollInterval = incomingPollInterval,
+       _signalPollInterval = signalPollInterval,
+       _pollingErrorBackoffMax = pollingErrorBackoffMax {
     _networkInfo.onConnectionChanged.listen((NetworkConnectionType type) {
       if (type != NetworkConnectionType.none) {
         _flushSignalQueue();
         unawaited(_replayOfflineQueuedTransfers());
-        unawaited(resumeIncompleteTransfers());
       }
     });
   }
@@ -87,12 +89,14 @@ class TransferRepositoryImpl implements TransferRepository {
   final BackgroundTransferRuntimeService _backgroundRuntimeService;
   final NetworkInfo _networkInfo;
   final Sha256Hasher _sha256Hasher;
-  final Duration _networkWaitTimeout;
-  final Duration _networkWaitPollInterval;
+  final Duration _incomingPollInterval;
+  final Duration _signalPollInterval;
+  final Duration _pollingErrorBackoffMax;
   final List<TransferLifecycleSignal> _pendingSignals =
       <TransferLifecycleSignal>[];
   final Set<String> _activeTransferLocks = <String>{};
   final Set<String> _cancelledTransferIds = <String>{};
+  final Map<String, int> _backgroundRetryAttempts = <String, int>{};
   bool _isFlushingSignals = false;
   bool _isResumingTransfers = false;
   DateTime? _lastProgressSyncAt;
@@ -120,14 +124,11 @@ class TransferRepositoryImpl implements TransferRepository {
   @override
   Future<void> retryTransfer(String transferId) async {
     developer.log(
-      'retry_scheduled',
+      'retry_requested_by_user',
       name: 'transfer',
       error: <String, Object?>{'transferId': transferId, 'userInitiated': true},
     );
-    await _backgroundRuntimeService.scheduleRetry(
-      transferId: transferId,
-      userInitiated: true,
-    );
+    await resumeIncompleteTransfers(transferId: transferId);
   }
 
   @override
@@ -137,7 +138,8 @@ class TransferRepositoryImpl implements TransferRepository {
       (String id) => id.startsWith('$transferId:'),
     );
     await _backgroundRuntimeService.cancelRetry(transferId: transferId);
-    await _backgroundRuntimeService.stopActiveTransfer();
+    _clearRetryState(transferId);
+    await _backgroundRuntimeService.stopActiveTransfer(transferId: transferId);
     await _localDataSource.updateTransferStatus(
       transferId,
       TransferStatus.cancelled,
@@ -183,10 +185,6 @@ class TransferRepositoryImpl implements TransferRepository {
               state.copyWith(status: 'downloading'),
             );
           }
-          await _backgroundRuntimeService.scheduleRetry(
-            transferId: state.transferId,
-            userInitiated: false,
-          );
           developer.log(
             'transfer_resumed_from_local_state',
             name: 'transfer',
@@ -284,60 +282,27 @@ class TransferRepositoryImpl implements TransferRepository {
   @override
   Stream<IncomingTransferOffer> listenIncomingTransfers({
     required String receiverId,
-  }) async* {
-    final List<TransferSessionRecord> initial = await _transferService
-        .getIncomingTransfers(receiverId);
-    for (final TransferSessionRecord row in initial) {
-      final IncomingTransferOffer? parsed = await _mapRecordToIncomingOffer(
-        row,
-      );
-      if (parsed == null) {
-        continue;
-      }
-      if (parsed.trustStatus == SenderTrustStatus.blocked) {
-        await _rejectBlockedIncoming(parsed);
-        continue;
-      }
-      if (await _localDataSource.fileExistsByFileId(parsed.fileId)) {
-        continue;
-      }
-      await _localDataSource.upsertIncomingTransfer(
-        transferId: parsed.transferId,
-        senderId: parsed.senderId,
-        receiverId: parsed.receiverId,
-        senderUsername: null,
-        receiverUsername: null,
-        fileId: parsed.fileId,
-        fileName: parsed.fileName,
-        fileSize: parsed.fileSize,
-        fileHash: parsed.fileHash,
-        storagePath: parsed.storagePath,
-        createdAt: parsed.createdAt,
-        status: TransferStatus.pending,
-      );
-      yield parsed;
-    }
+  }) {
+    final StreamController<IncomingTransferOffer> controller =
+        StreamController<IncomingTransferOffer>();
+    final Set<String> seenIncomingKeys = <String>{};
+    bool disposed = false;
+    StreamSubscription<TransferLifecycleSignal>? realtimeSubscription;
 
-    await for (final TransferLifecycleSignal signal
-        in _realtimeService.listenTransferSignals(receiverId: receiverId)) {
-      if (signal.event != TransferLifecycleEvent.transferStarted) {
-        continue;
-      }
-      final IncomingTransferOffer? offer = await _mapPayloadToIncomingOffer(
-        signal.toPayload(),
-      );
-      if (offer == null) {
-        continue;
+    Future<void> emitIncoming(IncomingTransferOffer offer) async {
+      final String dedupeKey = '${offer.transferId}:${offer.fileId}';
+      if (!seenIncomingKeys.add(dedupeKey)) {
+        return;
       }
       if (offer.trustStatus == SenderTrustStatus.blocked) {
         await _rejectBlockedIncoming(offer);
-        continue;
+        return;
       }
       final bool exists = await _localDataSource.fileExistsByFileId(
         offer.fileId,
       );
       if (exists) {
-        continue;
+        return;
       }
       await _localDataSource.upsertIncomingTransfer(
         transferId: offer.transferId,
@@ -353,25 +318,170 @@ class TransferRepositoryImpl implements TransferRepository {
         createdAt: offer.createdAt,
         status: TransferStatus.pending,
       );
-      yield offer;
+      if (!controller.isClosed) {
+        controller.add(offer);
+      }
     }
+
+    Future<void> pollIncomingLoop() async {
+      Duration nextDelay = Duration.zero;
+      while (!disposed) {
+        if (nextDelay > Duration.zero) {
+          await Future<void>.delayed(nextDelay);
+          if (disposed) {
+            return;
+          }
+        }
+        try {
+          final List<TransferSessionRecord> rows = await _transferService
+              .getIncomingTransfers(receiverId);
+          for (final TransferSessionRecord row in rows) {
+            final IncomingTransferOffer? parsed =
+                await _mapRecordToIncomingOffer(row);
+            if (parsed != null) {
+              await emitIncoming(parsed);
+            }
+          }
+          nextDelay = _incomingPollInterval;
+        } catch (_) {
+          nextDelay = nextDelay == Duration.zero
+              ? _incomingPollInterval
+              : Duration(
+                  milliseconds: (nextDelay.inMilliseconds * 2).clamp(
+                    _incomingPollInterval.inMilliseconds,
+                    _pollingErrorBackoffMax.inMilliseconds,
+                  ),
+                );
+        }
+      }
+    }
+
+    unawaited(pollIncomingLoop());
+    try {
+      realtimeSubscription = _realtimeService
+          .listenTransferSignals(receiverId: receiverId)
+          .listen((TransferLifecycleSignal signal) async {
+            if (signal.event != TransferLifecycleEvent.transferStarted) {
+              return;
+            }
+            final IncomingTransferOffer? offer =
+                await _mapPayloadToIncomingOffer(signal.toPayload());
+            if (offer != null) {
+              await emitIncoming(offer);
+            }
+          });
+    } catch (_) {
+      // Polling loop remains the fallback source of truth.
+    }
+
+    controller.onCancel = () async {
+      disposed = true;
+      await realtimeSubscription?.cancel();
+    };
+    return controller.stream;
   }
 
   @override
   Stream<TransferLifecycleSignalEntity> listenTransferSignals({
     required String userId,
   }) {
-    return _realtimeService.listenTransferSignals(receiverId: userId).map((
-      TransferLifecycleSignal signal,
-    ) {
-      return TransferLifecycleSignalEntity(
-        transferId: signal.transferId,
-        senderId: signal.senderId,
-        receiverId: signal.receiverId,
-        event: _mapSignalEventToEntity(signal.event),
-        emittedAt: signal.emittedAt,
-      );
-    });
+    final StreamController<TransferLifecycleSignalEntity> controller =
+        StreamController<TransferLifecycleSignalEntity>();
+    final Map<String, String> polledStatusByTransferId = <String, String>{};
+    final Set<String> emittedEventKeys = <String>{};
+    bool disposed = false;
+    StreamSubscription<TransferLifecycleSignal>? realtimeSubscription;
+
+    void emitSignalEntity(TransferLifecycleSignalEntity entity) {
+      final String key = '${entity.transferId}:${entity.event.name}';
+      if (emittedEventKeys.contains(key)) {
+        return;
+      }
+      emittedEventKeys.add(key);
+      if (!controller.isClosed) {
+        controller.add(entity);
+      }
+    }
+
+    Future<void> pollSignalLoop() async {
+      Duration nextDelay = Duration.zero;
+      while (!disposed) {
+        if (nextDelay > Duration.zero) {
+          await Future<void>.delayed(nextDelay);
+          if (disposed) {
+            return;
+          }
+        }
+        try {
+          final List<TransferSessionRecord> rows = await _transferService
+              .getParticipantTransfers(userId);
+          for (final TransferSessionRecord row in rows) {
+            final String status = (row.row['status'] as String? ?? '')
+                .trim()
+                .toLowerCase();
+            if (status.isEmpty) {
+              continue;
+            }
+            final String? previousStatus =
+                polledStatusByTransferId[row.transferId];
+            polledStatusByTransferId[row.transferId] = status;
+            if (previousStatus == status) {
+              continue;
+            }
+            final TransferLifecycleEventType? event = _statusToLifecycleEvent(
+              status,
+            );
+            if (event == null) {
+              continue;
+            }
+            emitSignalEntity(
+              TransferLifecycleSignalEntity(
+                transferId: row.transferId,
+                senderId: row.senderId,
+                receiverId: row.receiverId,
+                event: event,
+                emittedAt: DateTime.now(),
+              ),
+            );
+          }
+          nextDelay = _signalPollInterval;
+        } catch (_) {
+          nextDelay = nextDelay == Duration.zero
+              ? _signalPollInterval
+              : Duration(
+                  milliseconds: (nextDelay.inMilliseconds * 2).clamp(
+                    _signalPollInterval.inMilliseconds,
+                    _pollingErrorBackoffMax.inMilliseconds,
+                  ),
+                );
+        }
+      }
+    }
+
+    unawaited(pollSignalLoop());
+    try {
+      realtimeSubscription = _realtimeService
+          .listenTransferSignals(receiverId: userId)
+          .listen((TransferLifecycleSignal signal) {
+            emitSignalEntity(
+              TransferLifecycleSignalEntity(
+                transferId: signal.transferId,
+                senderId: signal.senderId,
+                receiverId: signal.receiverId,
+                event: _mapSignalEventToEntity(signal.event),
+                emittedAt: signal.emittedAt,
+              ),
+            );
+          });
+    } catch (_) {
+      // Polling loop remains the fallback source of truth.
+    }
+
+    controller.onCancel = () async {
+      disposed = true;
+      await realtimeSubscription?.cancel();
+    };
+    return controller.stream;
   }
 
   @override
@@ -531,10 +641,6 @@ class TransferRepositoryImpl implements TransferRepository {
             storagePath: transfer.storagePath,
           ),
         );
-        await _backgroundRuntimeService.scheduleRetry(
-          transferId: transfer.transferId,
-          userInitiated: false,
-        );
         throw const AppException(
           'Received file is corrupted (SHA-256 mismatch).',
           code: AppErrorCode.hashMismatch,
@@ -592,7 +698,14 @@ class TransferRepositoryImpl implements TransferRepository {
       );
       await _downloadManager.finalizeSession(transfer.transferId);
       await _localDataSource.clearTransferProgress(transfer.transferId);
-    } on AppException {
+      _clearRetryState(transfer.transferId);
+      await _backgroundRuntimeService.cancelRetry(transferId: transfer.transferId);
+    } on AppException catch (error) {
+      await _scheduleBackgroundRetryIfRecoverable(
+        transferId: transfer.transferId,
+        reason: error,
+        userInitiated: false,
+      );
       await _localDataSource.updateTransferStatus(
         transfer.transferId,
         TransferStatus.failed,
@@ -604,13 +717,14 @@ class TransferRepositoryImpl implements TransferRepository {
       await _transferService.updateTransferStatus(
         transferId: transfer.transferId,
         status: TransferStatus.failed.name,
-      );
-      await _backgroundRuntimeService.scheduleRetry(
-        transferId: transfer.transferId,
-        userInitiated: false,
       );
       rethrow;
     } catch (error) {
+      await _scheduleBackgroundRetryIfRecoverable(
+        transferId: transfer.transferId,
+        reason: error,
+        userInitiated: false,
+      );
       await _localDataSource.updateTransferStatus(
         transfer.transferId,
         TransferStatus.failed,
@@ -623,13 +737,11 @@ class TransferRepositoryImpl implements TransferRepository {
         transferId: transfer.transferId,
         status: TransferStatus.failed.name,
       );
-      await _backgroundRuntimeService.scheduleRetry(
-        transferId: transfer.transferId,
-        userInitiated: false,
-      );
       throw AppException(error.toString());
     } finally {
-      await _backgroundRuntimeService.stopActiveTransfer();
+      await _backgroundRuntimeService.stopActiveTransfer(
+        transferId: transfer.transferId,
+      );
       _activeTransferLocks.remove(lockId);
     }
   }
@@ -693,6 +805,14 @@ class TransferRepositoryImpl implements TransferRepository {
     String userId,
   ) async {
     final List<TransferEntity> history = await getTransferHistory(userId);
+    final List<UserCollection> cachedUsers = await _isar.userCollections
+        .where()
+        .findAll();
+    final Map<String, String> emailByUserId = <String, String>{
+      for (final UserCollection user in cachedUsers)
+        if (user.email != null && user.email!.trim().isNotEmpty)
+          user.supabaseUserId: user.email!.trim(),
+    };
     final Map<String, ProfileInteractionEntity> interactionsByUserId =
         <String, ProfileInteractionEntity>{};
 
@@ -701,13 +821,15 @@ class TransferRepositoryImpl implements TransferRepository {
       final String counterpartId = isSender
           ? transfer.receiverId
           : transfer.senderId;
-      final String counterpartUsername = isSender
-          ? (transfer.receiverUsername?.trim().isNotEmpty == true
-                ? transfer.receiverUsername!
-                : 'Unknown user')
-          : (transfer.senderUsername?.trim().isNotEmpty == true
-                ? transfer.senderUsername!
-                : 'Unknown user');
+      final String counterpartLabel =
+          emailByUserId[counterpartId] ??
+          (isSender
+              ? (transfer.receiverUsername?.trim().isNotEmpty == true
+                    ? transfer.receiverUsername!
+                    : counterpartId)
+              : (transfer.senderUsername?.trim().isNotEmpty == true
+                    ? transfer.senderUsername!
+                    : counterpartId));
 
       final ProfileInteractionEntity? existing =
           interactionsByUserId[counterpartId];
@@ -715,7 +837,7 @@ class TransferRepositoryImpl implements TransferRepository {
           transfer.createdAt.isAfter(existing.lastInteractionDate)) {
         interactionsByUserId[counterpartId] = ProfileInteractionEntity(
           userId: counterpartId,
-          username: counterpartUsername,
+          username: counterpartLabel,
           lastInteractionDate: transfer.createdAt,
         );
       }
@@ -813,6 +935,7 @@ class TransferRepositoryImpl implements TransferRepository {
       fileName: sortedFiles.first.fileName,
       progressPercent: 0,
     );
+    _clearRetryState(sessionId);
 
     try {
       for (final SelectedTransferFile file in sortedFiles) {
@@ -820,7 +943,8 @@ class TransferRepositoryImpl implements TransferRepository {
         String? activeFileHash;
         String activeStoragePath = '$sessionId/${file.id}';
         try {
-          final String transferId = '${sessionId}_${file.id}';
+          final String transferId =
+              '${sessionId}_${_sanitizeTransferIdComponent(file.id)}';
           final DateTime transferCreatedAt = DateTime.now();
           activeTransferId = transferId;
           _cancelledTransferIds.remove(transferId);
@@ -941,10 +1065,7 @@ class TransferRepositoryImpl implements TransferRepository {
                   'fileId': file.id,
                 },
               );
-              await _waitUntilNetworkAvailable(
-                transferId: session.transferId,
-                timeout: _networkWaitTimeout,
-              );
+              await _handleNoNetworkDuringTransfer(session.transferId);
             }
             final Stream<List<int>> bytes = source.openRead(
               chunk.startByte,
@@ -1035,9 +1156,18 @@ class TransferRepositoryImpl implements TransferRepository {
             session.transferId,
             fileId: file.id,
           );
+          _clearRetryState(session.transferId);
+          await _backgroundRuntimeService.cancelRetry(
+            transferId: session.transferId,
+          );
         } catch (error) {
           final String reason = error.toString();
           if (activeTransferId != null) {
+            await _scheduleBackgroundRetryIfRecoverable(
+              transferId: activeTransferId,
+              reason: error,
+              userInitiated: false,
+            );
             await _localDataSource.updateTransferStatus(
               activeTransferId,
               TransferStatus.failed,
@@ -1100,13 +1230,9 @@ class TransferRepositoryImpl implements TransferRepository {
           'errorCode': AppErrorCode.chunkTransferFailed.name,
         },
       );
-      await _backgroundRuntimeService.scheduleRetry(
-        transferId: sessionId,
-        userInitiated: false,
-      );
       rethrow;
     } finally {
-      await _backgroundRuntimeService.stopActiveTransfer();
+      await _backgroundRuntimeService.stopActiveTransfer(transferId: sessionId);
     }
   }
 
@@ -1347,6 +1473,21 @@ class TransferRepositoryImpl implements TransferRepository {
     }
   }
 
+  TransferLifecycleEventType? _statusToLifecycleEvent(String status) {
+    switch (status) {
+      case 'downloading':
+        return TransferLifecycleEventType.transferAccepted;
+      case 'completed':
+        return TransferLifecycleEventType.transferCompleted;
+      case 'failed':
+        return TransferLifecycleEventType.transferFailed;
+      case 'cancelled':
+        return TransferLifecycleEventType.transferRejected;
+      default:
+        return null;
+    }
+  }
+
   TransferLifecycleEventType _mapSignalEventToEntity(
     TransferLifecycleEvent event,
   ) {
@@ -1439,15 +1580,7 @@ class TransferRepositoryImpl implements TransferRepository {
           name: 'transfer',
           error: <String, Object?>{'transferId': transfer.transferId},
         );
-        await _waitUntilNetworkAvailable(
-          transferId: transfer.transferId,
-          timeout: _networkWaitTimeout,
-        );
-        developer.log(
-          'transfer_auto_resumed_network_returned',
-          name: 'transfer',
-          error: <String, Object?>{'transferId': transfer.transferId},
-        );
+        await _handleNoNetworkDuringTransfer(transfer.transferId);
       }
       try {
         if (_isTransferCancelled(transfer.transferId)) {
@@ -1512,30 +1645,77 @@ class TransferRepositoryImpl implements TransferRepository {
     }
   }
 
-  Future<void> _waitUntilNetworkAvailable({
-    String? transferId,
-    Duration timeout = const Duration(minutes: 2),
-  }) async {
-    final DateTime deadline = DateTime.now().add(timeout);
-    while (!await _networkInfo.isConnected) {
-      if (transferId != null && _isTransferCancelled(transferId)) {
-        throw const AppException(
-          'Transfer cancelled by user.',
-          code: AppErrorCode.unknown,
-        );
-      }
-      if (DateTime.now().isAfter(deadline)) {
-        throw const AppException(
-          'Network unavailable for too long.',
-          code: AppErrorCode.chunkTransferFailed,
-        );
-      }
-      await Future<void>.delayed(_networkWaitPollInterval);
-    }
-  }
-
   bool _isTransferCancelled(String transferId) {
     return _cancelledTransferIds.contains(transferId);
+  }
+
+  Future<void> _handleNoNetworkDuringTransfer(String transferId) async {
+    await _backgroundRuntimeService.stopActiveTransfer(transferId: transferId);
+    throw const AppException(
+      'Network unavailable. Transfer paused and queued for retry.',
+      code: AppErrorCode.chunkTransferFailed,
+    );
+  }
+
+  bool _isRecoverableTransferError(Object reason) {
+    if (reason is! AppException) {
+      return true;
+    }
+    return switch (reason.code) {
+      AppErrorCode.chunkTransferFailed => true,
+      AppErrorCode.unknown => true,
+      AppErrorCode.hashMismatch => false,
+      AppErrorCode.duplicateFile => false,
+      AppErrorCode.insufficientStorage => false,
+      AppErrorCode.insecureEndpoint => false,
+      AppErrorCode.invalidRecipientCode => false,
+      AppErrorCode.invalidReceiver => false,
+    };
+  }
+
+  Future<void> _scheduleBackgroundRetryIfRecoverable({
+    required String transferId,
+    required Object reason,
+    required bool userInitiated,
+  }) async {
+    if (!_isRecoverableTransferError(reason) ||
+        _cancelledTransferIds.contains(transferId)) {
+      return;
+    }
+    final int attempt = _backgroundRetryAttempts[transferId] ?? 0;
+    if (!_retryQueue.canRetryAgain(attempt)) {
+      developer.log(
+        'transfer_retry_exhausted',
+        name: 'transfer',
+        error: <String, Object?>{
+          'transferId': transferId,
+          'attempt': attempt,
+          'reason': reason.toString(),
+        },
+      );
+      return;
+    }
+    final Duration delay = _retryQueue.backoffAfterAttempt(attempt);
+    _backgroundRetryAttempts[transferId] = attempt + 1;
+    await _backgroundRuntimeService.scheduleRetry(
+      transferId: transferId,
+      userInitiated: userInitiated,
+      initialDelay: delay,
+    );
+    developer.log(
+      'transfer_retry_scheduled',
+      name: 'transfer',
+      error: <String, Object?>{
+        'transferId': transferId,
+        'attempt': attempt + 1,
+        'delayMs': delay.inMilliseconds,
+        'userInitiated': userInitiated,
+      },
+    );
+  }
+
+  void _clearRetryState(String transferId) {
+    _backgroundRetryAttempts.remove(transferId);
   }
 
   Future<void> _queueOfflineTransferSignal(
@@ -1588,9 +1768,10 @@ class TransferRepositoryImpl implements TransferRepository {
         );
         continue;
       }
-      await _backgroundRuntimeService.scheduleRetry(
-        transferId: row.transferId,
-        userInitiated: false,
+      developer.log(
+        'offline_retry_pending_user_action',
+        name: 'transfer',
+        error: <String, Object?>{'transferId': row.transferId},
       );
     }
   }
@@ -1615,5 +1796,19 @@ class TransferRepositoryImpl implements TransferRepository {
       }
       copy += 1;
     }
+  }
+
+  String _sanitizeTransferIdComponent(String raw) {
+    final String normalized = raw
+        .trim()
+        .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+    if (normalized.isEmpty) {
+      return 'file';
+    }
+    const int maxLength = 48;
+    return normalized.length <= maxLength
+        ? normalized
+        : normalized.substring(0, maxLength);
   }
 }
