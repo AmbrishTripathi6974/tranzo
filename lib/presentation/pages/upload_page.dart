@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/selected_transfer_file.dart';
 import '../../domain/entities/transfer_batch_progress.dart';
 import '../bloc/profile/profile_bloc.dart';
+import '../bloc/profile/profile_event.dart';
 import '../bloc/profile/profile_state.dart';
 import '../bloc/transfer/transfer_bloc.dart';
 import '../bloc/transfer/transfer_event.dart';
@@ -19,9 +20,20 @@ class UploadPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Send'), centerTitle: false),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: const _UploadForm(),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final double maxWidth = constraints.maxWidth >= 1000 ? 860 : 760;
+            return Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: _UploadForm(),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -178,6 +190,8 @@ class _UploadFormState extends State<_UploadForm> {
         },
         child: BlocBuilder<TransferBloc, TransferState>(
           builder: (BuildContext context, TransferState transferState) {
+            final bool keyboardVisible =
+                MediaQuery.viewInsetsOf(context).bottom > 0;
             final List<SelectedTransferFile> selected =
                 transferState.selectedUploadFiles;
             final bool draftLocked =
@@ -362,63 +376,75 @@ class _UploadFormState extends State<_UploadForm> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 14),
-                Row(
-                  children: <Widget>[
-                    Text(
-                      'Files',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
+                if (!keyboardVisible) ...<Widget>[
+                  const SizedBox(height: 14),
+                  Row(
+                    children: <Widget>[
+                      Text(
+                        'Files',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (selected.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.secondaryContainer,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          '${selected.length}',
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: theme.colorScheme.onSecondaryContainer,
-                            fontWeight: FontWeight.w600,
+                      const SizedBox(width: 8),
+                      if (selected.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${selected.length}',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: theme.colorScheme.onSecondaryContainer,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Expanded(
-                  child: selected.isEmpty
-                      ? _UploadEmptyState(theme: theme)
-                      : ListView.separated(
-                          itemCount: selected.length,
-                          separatorBuilder: (BuildContext context, int index) =>
-                              const SizedBox(height: 8),
-                          itemBuilder: (BuildContext context, int index) {
-                            final SelectedTransferFile file = selected[index];
-                            final TransferFileProgress? progress =
-                                transferState.batchProgressByFileId[file.id];
-                            return _TransferFileRow(
-                              file: file,
-                              progress: progress,
-                              canRemove: canEditSelection,
-                              onRemove: () {
-                                context.read<TransferBloc>().add(
-                                  TransferUploadDraftFileRemoved(
-                                    file.localPath,
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                        ),
-                ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: selected.isEmpty
+                        ? _UploadEmptyState(theme: theme)
+                        : ListView.separated(
+                            itemCount: selected.length,
+                            separatorBuilder:
+                                (BuildContext context, int index) =>
+                                    const SizedBox(height: 8),
+                            itemBuilder: (BuildContext context, int index) {
+                              final SelectedTransferFile file = selected[index];
+                              final TransferFileProgress? progress =
+                                  transferState.batchProgressByFileId[file.id];
+                              return _TransferFileRow(
+                                file: file,
+                                progress: progress,
+                                canRemove: canEditSelection,
+                                onRemove: () {
+                                  context.read<TransferBloc>().add(
+                                    TransferUploadDraftFileRemoved(
+                                      file.localPath,
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ] else ...<Widget>[
+                  const SizedBox(height: 8),
+                  Text(
+                    '${selected.length} file(s) selected',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ],
             );
           },
@@ -473,8 +499,9 @@ class _UploadFormState extends State<_UploadForm> {
     final profileState = context.read<ProfileBloc>().state;
     if (profileState.status != ProfileStatus.success ||
         profileState.user == null) {
+      context.read<ProfileBloc>().add(const ProfileRequested());
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User profile is not ready yet.')),
+        const SnackBar(content: Text('Preparing profile... Please try again.')),
       );
       return;
     }
@@ -547,15 +574,24 @@ class _TransferFileRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                Text(
-                  statusLabel,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
+                Flexible(
+                  child: Text(
+                    statusLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 if (canRemove)
                   IconButton(
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
                     icon: const Icon(Icons.close_rounded),
                     tooltip: 'Remove from transfer',
                     onPressed: onRemove,

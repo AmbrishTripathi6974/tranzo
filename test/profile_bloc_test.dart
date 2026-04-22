@@ -10,8 +10,8 @@ import 'package:tranzo/domain/entities/transfer_task.dart';
 import 'package:tranzo/domain/entities/user_entity.dart';
 import 'package:tranzo/domain/repositories/auth_repository.dart';
 import 'package:tranzo/domain/repositories/transfer_repository.dart';
+import 'package:tranzo/domain/usecases/get_current_user_usecase.dart';
 import 'package:tranzo/domain/usecases/get_user_interactions_usecase.dart';
-import 'package:tranzo/domain/usecases/get_user_profile_usecase.dart';
 import 'package:tranzo/presentation/bloc/profile/profile_bloc.dart';
 import 'package:tranzo/presentation/bloc/profile/profile_event.dart';
 import 'package:tranzo/presentation/bloc/profile/profile_state.dart';
@@ -33,7 +33,7 @@ void main() {
             ],
           );
       final ProfileBloc bloc = ProfileBloc(
-        getUserProfile: GetUserProfile(authRepository),
+        getCurrentUser: GetCurrentUserUseCase(authRepository),
         getUserInteractions: GetUserInteractions(transferRepository),
       );
 
@@ -49,7 +49,7 @@ void main() {
     test('second ProfileRequested can surface updated recipient short code', () async {
       final _SequentialAuthRepository authRepository =
           _SequentialAuthRepository(
-            users: <UserEntity?>[
+            users: <UserEntity>[
               const UserEntity(id: 'u1', shortCode: '', username: 'Alice'),
               const UserEntity(id: 'u1', shortCode: 'XY12AB', username: 'Alice'),
             ],
@@ -58,7 +58,7 @@ void main() {
           _FakeTransferRepository(interactions: <ProfileInteractionEntity>[]);
 
       final ProfileBloc bloc = ProfileBloc(
-        getUserProfile: GetUserProfile(authRepository),
+        getCurrentUser: GetCurrentUserUseCase(authRepository),
         getUserInteractions: GetUserInteractions(transferRepository),
       );
 
@@ -77,13 +77,53 @@ void main() {
       expect(bloc.state.user?.shortCode, 'XY12AB');
       await bloc.close();
     });
+
+    test('emits error when current-user initialization fails', () async {
+      final _ThrowingAuthRepository authRepository = _ThrowingAuthRepository();
+      final _FakeTransferRepository transferRepository =
+          _FakeTransferRepository(interactions: <ProfileInteractionEntity>[]);
+      final ProfileBloc bloc = ProfileBloc(
+        getCurrentUser: GetCurrentUserUseCase(authRepository),
+        getUserInteractions: GetUserInteractions(transferRepository),
+      );
+
+      bloc.add(const ProfileRequested());
+      await bloc.stream.firstWhere(
+        (ProfileState s) => s.status == ProfileStatus.error,
+      );
+
+      expect(bloc.state.errorMessage, isNotNull);
+      await bloc.close();
+    });
+
+    test('ignores duplicate ProfileRequested while request is in flight', () async {
+      final _CountingDelayedAuthRepository authRepository =
+          _CountingDelayedAuthRepository(
+            user: const UserEntity(id: 'u1', shortCode: 'AB12', username: 'Alice'),
+          );
+      final _FakeTransferRepository transferRepository =
+          _FakeTransferRepository(interactions: <ProfileInteractionEntity>[]);
+      final ProfileBloc bloc = ProfileBloc(
+        getCurrentUser: GetCurrentUserUseCase(authRepository),
+        getUserInteractions: GetUserInteractions(transferRepository),
+      );
+
+      bloc.add(const ProfileRequested());
+      bloc.add(const ProfileRequested());
+      await bloc.stream.firstWhere(
+        (ProfileState s) => s.status == ProfileStatus.success,
+      );
+
+      expect(authRepository.callCount, 1);
+      await bloc.close();
+    });
   });
 }
 
 class _SequentialAuthRepository implements AuthRepository {
-  _SequentialAuthRepository({required List<UserEntity?> users}) : _users = users;
+  _SequentialAuthRepository({required List<UserEntity> users}) : _users = users;
 
-  final List<UserEntity?> _users;
+  final List<UserEntity> _users;
   int _call = 0;
 
   @override
@@ -95,10 +135,7 @@ class _SequentialAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<UserEntity?> getCurrentUser() async {
-    if (_users.isEmpty) {
-      return null;
-    }
+  Future<UserEntity> getCurrentUser() async {
     final int index = _call < _users.length ? _call : _users.length - 1;
     _call++;
     return _users[index];
@@ -108,7 +145,7 @@ class _SequentialAuthRepository implements AuthRepository {
 class _FakeAuthRepository implements AuthRepository {
   _FakeAuthRepository({required this.user});
 
-  final UserEntity? user;
+  final UserEntity user;
 
   @override
   Future<UserEntity> createUser({
@@ -119,7 +156,44 @@ class _FakeAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<UserEntity?> getCurrentUser() async => user;
+  Future<UserEntity> getCurrentUser() async => user;
+}
+
+class _CountingDelayedAuthRepository implements AuthRepository {
+  _CountingDelayedAuthRepository({required this.user});
+
+  final UserEntity user;
+  int callCount = 0;
+
+  @override
+  Future<UserEntity> createUser({
+    required String shortCode,
+    required String username,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<UserEntity> getCurrentUser() async {
+    callCount++;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    return user;
+  }
+}
+
+class _ThrowingAuthRepository implements AuthRepository {
+  @override
+  Future<UserEntity> createUser({
+    required String shortCode,
+    required String username,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<UserEntity> getCurrentUser() async {
+    throw Exception('init failed');
+  }
 }
 
 class _FakeTransferRepository implements TransferRepository {

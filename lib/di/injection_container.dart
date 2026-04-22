@@ -23,7 +23,6 @@ import '../domain/repositories/transfer_repository.dart';
 import '../domain/usecases/create_user_usecase.dart';
 import '../domain/usecases/get_current_user_usecase.dart';
 import '../domain/usecases/get_user_interactions_usecase.dart';
-import '../domain/usecases/get_user_profile_usecase.dart';
 import '../domain/usecases/get_transfer_history_usecase.dart';
 import '../domain/usecases/check_transfer_permissions_usecase.dart';
 import '../domain/usecases/check_storage_availability_usecase.dart';
@@ -139,14 +138,11 @@ Future<void> configureDependencies() async {
 
   // Use cases
   sl.registerLazySingleton<CreateUser>(() => CreateUser(sl<AuthRepository>()));
-  sl.registerLazySingleton<GetCurrentUser>(
-    () => GetCurrentUser(sl<AuthRepository>()),
+  sl.registerLazySingleton<GetCurrentUserUseCase>(
+    () => GetCurrentUserUseCase(sl<AuthRepository>()),
   );
   sl.registerLazySingleton<GetTransferHistoryUseCase>(
     () => GetTransferHistoryUseCase(sl<TransferRepository>()),
-  );
-  sl.registerLazySingleton<GetUserProfile>(
-    () => GetUserProfile(sl<AuthRepository>()),
   );
   sl.registerLazySingleton<GetUserInteractions>(
     () => GetUserInteractions(sl<TransferRepository>()),
@@ -197,7 +193,7 @@ Future<void> configureDependencies() async {
   // Blocs
   sl.registerFactory<AuthBloc>(
     () => AuthBloc(
-      getCurrentUser: sl<GetCurrentUser>(),
+      getCurrentUser: sl<GetCurrentUserUseCase>(),
       createUser: sl<CreateUser>(),
     ),
   );
@@ -206,7 +202,7 @@ Future<void> configureDependencies() async {
   );
   sl.registerFactory<ProfileBloc>(
     () => ProfileBloc(
-      getUserProfile: sl<GetUserProfile>(),
+      getCurrentUser: sl<GetCurrentUserUseCase>(),
       getUserInteractions: sl<GetUserInteractions>(),
     ),
   );

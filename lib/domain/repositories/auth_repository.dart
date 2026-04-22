@@ -6,5 +6,5 @@ abstract interface class AuthRepository {
     required String username,
   });
 
-  Future<UserEntity?> getCurrentUser();
+  Future<UserEntity> getCurrentUser();
 }

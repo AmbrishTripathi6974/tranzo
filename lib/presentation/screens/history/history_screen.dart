@@ -57,6 +57,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final String? currentUserId = context.select<ProfileBloc, String?>(
       (ProfileBloc bloc) => bloc.state.user?.id,
     );
+    final double width = MediaQuery.sizeOf(context).width;
+    final double horizontalPadding = width >= 1100
+        ? (width - 860) / 2
+        : width >= 900
+        ? 28
+        : 16;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF0F2FA),
@@ -86,7 +92,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ),
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      padding: EdgeInsets.fromLTRB(
+                        horizontalPadding,
+                        0,
+                        horizontalPadding,
+                        12,
+                      ),
                       child: _FilterStrip(
                         selected: state.filterType,
                         onChanged: (HistoryFilterType next) {
@@ -116,6 +127,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       theme: theme,
                       state: state,
                       currentUserId: currentUserId,
+                      horizontalPadding: horizontalPadding,
                     ),
                 ],
               ),
@@ -131,6 +143,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     required ThemeData theme,
     required HistoryState state,
     required String currentUserId,
+    required double horizontalPadding,
   }) {
     switch (state.status) {
       case HistoryStatus.initial:
@@ -265,7 +278,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           );
           out.add(
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate((
                   BuildContext context,
@@ -437,35 +450,75 @@ class _HistoryHeroHeader extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 22),
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: _StatTile(
-                      icon: Icons.layers_rounded,
-                      label: 'Total',
-                      value: total.toString(),
-                      surface: Colors.white.withValues(alpha: 0.16),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _StatTile(
-                      icon: Icons.upload_rounded,
-                      label: 'Sent',
-                      value: sent.toString(),
-                      surface: Colors.white.withValues(alpha: 0.16),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _StatTile(
-                      icon: Icons.download_rounded,
-                      label: 'Received',
-                      value: received.toString(),
-                      surface: Colors.white.withValues(alpha: 0.16),
-                    ),
-                  ),
-                ],
+              LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final bool compact = constraints.maxWidth < 360;
+                  if (compact) {
+                    return Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: <Widget>[
+                        SizedBox(
+                          width: (constraints.maxWidth - 10) / 2,
+                          child: _StatTile(
+                            icon: Icons.layers_rounded,
+                            label: 'Total',
+                            value: total.toString(),
+                            surface: Colors.white.withValues(alpha: 0.16),
+                          ),
+                        ),
+                        SizedBox(
+                          width: (constraints.maxWidth - 10) / 2,
+                          child: _StatTile(
+                            icon: Icons.upload_rounded,
+                            label: 'Sent',
+                            value: sent.toString(),
+                            surface: Colors.white.withValues(alpha: 0.16),
+                          ),
+                        ),
+                        SizedBox(
+                          width: (constraints.maxWidth - 10) / 2,
+                          child: _StatTile(
+                            icon: Icons.download_rounded,
+                            label: 'Received',
+                            value: received.toString(),
+                            surface: Colors.white.withValues(alpha: 0.16),
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: _StatTile(
+                          icon: Icons.layers_rounded,
+                          label: 'Total',
+                          value: total.toString(),
+                          surface: Colors.white.withValues(alpha: 0.16),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _StatTile(
+                          icon: Icons.upload_rounded,
+                          label: 'Sent',
+                          value: sent.toString(),
+                          surface: Colors.white.withValues(alpha: 0.16),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _StatTile(
+                          icon: Icons.download_rounded,
+                          label: 'Received',
+                          value: received.toString(),
+                          surface: Colors.white.withValues(alpha: 0.16),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ],
           ),

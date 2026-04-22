@@ -8,7 +8,7 @@ import 'auth_state.dart';
 
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   AuthBloc({
-    required GetCurrentUser getCurrentUser,
+    required GetCurrentUserUseCase getCurrentUser,
     required CreateUser createUser,
   }) : _getCurrentUser = getCurrentUser,
        _createUser = createUser,
@@ -17,17 +17,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthUserCreated>(_onUserCreated);
   }
 
-  final GetCurrentUser _getCurrentUser;
+  final GetCurrentUserUseCase _getCurrentUser;
   final CreateUser _createUser;
 
   Future<void> _onStarted(AuthStarted event, Emitter<AuthState> emit) async {
     emit(state.copyWith(status: AuthStatus.loading, clearErrorMessage: true));
     try {
-      UserEntity? user = await _getCurrentUser();
-      user ??= await _createUser(
-        shortCode: '',
-        username: 'User',
-      );
+      final UserEntity user = await _getCurrentUser();
       emit(
         state.copyWith(
           status: AuthStatus.success,

@@ -1,10 +1,10 @@
 import '../entities/user_entity.dart';
 import '../repositories/auth_repository.dart';
 
-class GetCurrentUser {
-  const GetCurrentUser(this._repository);
+class GetCurrentUserUseCase {
+  const GetCurrentUserUseCase(this._repository);
 
   final AuthRepository _repository;
 
-  Future<UserEntity?> call() => _repository.getCurrentUser();
+  Future<UserEntity> call() => _repository.getCurrentUser();
 }

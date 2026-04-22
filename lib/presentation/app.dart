@@ -29,10 +29,13 @@ class App extends StatelessWidget {
       child: _ProfileBootstrap(
         child: BlocListener<AuthBloc, AuthState>(
           listenWhen: (AuthState previous, AuthState current) {
-            return current.status == AuthStatus.success &&
-                current.user != null &&
-                (previous.user?.id != current.user?.id ||
-                    previous.status != AuthStatus.success);
+            // Profile identity is local-first; request profile once auth is no
+            // longer loading, even if auth ended in error.
+            if (current.status == AuthStatus.loading) {
+              return false;
+            }
+            return previous.status != current.status ||
+                previous.user?.id != current.user?.id;
           },
           listener: (BuildContext context, AuthState state) {
             context.read<ProfileBloc>().add(const ProfileRequested());
@@ -127,8 +130,7 @@ class _ProfileBootstrapState extends State<_ProfileBootstrap> {
       }
       final AuthState auth = context.read<AuthBloc>().state;
       final ProfileBloc profile = context.read<ProfileBloc>();
-      if (auth.status == AuthStatus.success &&
-          auth.user != null &&
+      if (auth.status != AuthStatus.loading &&
           profile.state.status == ProfileStatus.initial) {
         profile.add(const ProfileRequested());
       }
