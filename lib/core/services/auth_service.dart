@@ -97,13 +97,16 @@ final class AuthService {
     }
     await persistRecipientCode(user.id, code);
 
+    final String email = (user.email ?? '').trim().toLowerCase();
     final Object? metaName = user.userMetadata?['display_name'];
-    final String username = metaName is String && metaName.isNotEmpty
-        ? metaName
-        : 'User';
+    final String displayName = metaName is String ? metaName.trim() : '';
+    final String username = displayName.isNotEmpty
+        ? displayName
+        : (email.isNotEmpty ? email : user.id);
 
     return UserSessionSnapshot(
       userId: user.id,
+      email: email,
       shortCode: code,
       username: username,
     );
@@ -256,11 +259,13 @@ final class RecipientCodeValidation {
 final class UserSessionSnapshot {
   const UserSessionSnapshot({
     required this.userId,
+    required this.email,
     required this.shortCode,
     required this.username,
   });
 
   final String userId;
+  final String email;
   final String shortCode;
   final String username;
 }

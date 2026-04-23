@@ -74,6 +74,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
+  Future<void> _confirmSignOut() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Log out?'),
+          content: const Text('Are you sure you want to log out?'),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted || confirmed != true) {
+      return;
+    }
+    context.read<AuthBloc>().add(const AuthSignedOut());
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -83,9 +109,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           IconButton(
             tooltip: 'Sign out',
             icon: const Icon(Icons.logout),
-            onPressed: () {
-              context.read<AuthBloc>().add(const AuthSignedOut());
-            },
+            onPressed: _confirmSignOut,
           ),
         ],
       ),
@@ -480,7 +504,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   margin: const EdgeInsets.only(bottom: 8),
                                   child: ListTile(
                                     leading: const Icon(Icons.swap_horiz),
-                                    title: Text(interaction.username),
+                                    title: Text(interaction.displayLabel),
                                     subtitle: Text(
                                       'Last interaction: '
                                       '${_formatDate(interaction.lastInteractionDate)}',

@@ -27,7 +27,7 @@ void main() {
             interactions: <ProfileInteractionEntity>[
               ProfileInteractionEntity(
                 userId: 'u2',
-                username: 'Bob',
+                displayLabel: 'Bob',
                 lastInteractionDate: DateTime(2026, 1, 5),
               ),
             ],

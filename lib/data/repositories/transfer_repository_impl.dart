@@ -1126,15 +1126,17 @@ class TransferRepositoryImpl implements TransferRepository {
       final String counterpartId = isSender
           ? transfer.receiverId
           : transfer.senderId;
+      final String? counterpartEmail = emailByUserId[counterpartId];
+      final String? transferSideName = isSender
+          ? transfer.receiverUsername?.trim()
+          : transfer.senderUsername?.trim();
+      final bool hasUsableName =
+          transferSideName != null &&
+          transferSideName.isNotEmpty &&
+          transferSideName.toLowerCase() != 'user';
       final String counterpartLabel =
-          emailByUserId[counterpartId] ??
-          (isSender
-              ? (transfer.receiverUsername?.trim().isNotEmpty == true
-                    ? transfer.receiverUsername!
-                    : counterpartId)
-              : (transfer.senderUsername?.trim().isNotEmpty == true
-                    ? transfer.senderUsername!
-                    : counterpartId));
+          counterpartEmail ??
+          (hasUsableName ? transferSideName : counterpartId);
 
       final ProfileInteractionEntity? existing =
           interactionsByUserId[counterpartId];
@@ -1142,7 +1144,7 @@ class TransferRepositoryImpl implements TransferRepository {
           transfer.createdAt.isAfter(existing.lastInteractionDate)) {
         interactionsByUserId[counterpartId] = ProfileInteractionEntity(
           userId: counterpartId,
-          username: counterpartLabel,
+          displayLabel: counterpartLabel,
           lastInteractionDate: transfer.createdAt,
         );
       }

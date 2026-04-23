@@ -40,6 +40,7 @@ class AuthRepositoryImpl implements AuthRepository {
     );
     final UserCollection fromSession = UserCollection()
       ..supabaseUserId = snapshot.userId
+      ..email = snapshot.email
       ..displayName = snapshot.username
       ..shortCode = snapshot.shortCode
       ..updatedAt = DateTime.now();
@@ -75,11 +76,15 @@ class AuthRepositoryImpl implements AuthRepository {
         }
         if (remoteSnapshot != null) {
           final bool needsRefresh =
-              cached.supabaseUserId != remoteSnapshot.userId;
+              cached.supabaseUserId != remoteSnapshot.userId ||
+              (cached.email ?? '') != remoteSnapshot.email ||
+              (cached.displayName ?? '') != remoteSnapshot.username ||
+              (cached.shortCode ?? '') != remoteSnapshot.shortCode;
           if (needsRefresh) {
             await _isar
                 .writeTxn(() async {
                   cached.supabaseUserId = remoteSnapshot!.userId;
+                  cached.email = remoteSnapshot.email;
                   cached.displayName = remoteSnapshot.username;
                   cached.shortCode = remoteSnapshot.shortCode;
                   cached.updatedAt = DateTime.now();
@@ -136,6 +141,7 @@ class AuthRepositoryImpl implements AuthRepository {
         );
         final UserCollection fromSession = UserCollection()
           ..supabaseUserId = snapshot.userId
+          ..email = snapshot.email
           ..displayName = snapshot.username
           ..shortCode = snapshot.shortCode
           ..updatedAt = DateTime.now();
@@ -162,10 +168,14 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   UserEntity _entityFromCollection(UserCollection cached) {
+    final String displayName = (cached.displayName ?? '').trim();
+    final String email = (cached.email ?? '').trim();
     final UserModel userModel = UserModel(
       id: cached.supabaseUserId,
       shortCode: cached.shortCode ?? '',
-      username: cached.displayName ?? '',
+      username: displayName.isNotEmpty
+          ? displayName
+          : (email.isNotEmpty ? email : cached.supabaseUserId),
     );
     return userModel.toEntity();
   }
