@@ -67,10 +67,14 @@ class TransferForegroundTaskHandler extends TaskHandler {
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {}
 
   @override
-  void onNotificationButtonPressed(String id) {}
+  void onNotificationButtonPressed(String id) {
+    // Intentionally no-op: notification must never trigger transfer actions.
+  }
 
   @override
-  void onNotificationPressed() {}
+  void onNotificationPressed() {
+    // Intentionally no-op: inbox/download button is the only download trigger.
+  }
 
   @override
   void onNotificationDismissed() {}
@@ -386,7 +390,10 @@ class AndroidBackgroundTransferRuntimeService
     required String fileName,
     required int progressPercent,
   }) {
-    final int monotonic = _progressTracker.nextProgress(transferId, progressPercent);
+    final int monotonic = _progressTracker.nextProgress(
+      transferId,
+      progressPercent,
+    );
     final String sanitizedFileName = _sanitizeFileName(fileName);
     return _NotificationRenderState(
       transferId: transferId,
@@ -461,10 +468,10 @@ class MethodChannelAndroidTransferProgressNotificationBridge
     MethodChannel? channel,
     bool Function()? isSupportedPlatform,
   }) : _channel =
-           channel ?? const MethodChannel('tranzo/transfer_progress_notification'),
+           channel ??
+           const MethodChannel('tranzo/transfer_progress_notification'),
        _isSupportedPlatform =
-           isSupportedPlatform ??
-           _defaultIsSupportedPlatform;
+           isSupportedPlatform ?? _defaultIsSupportedPlatform;
 
   final MethodChannel _channel;
   final bool Function() _isSupportedPlatform;

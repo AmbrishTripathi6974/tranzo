@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:isar_community/isar.dart';
 import 'package:tranzo/core/database/isar/collections/file_collection.dart';
@@ -111,9 +112,7 @@ Future<void> main() async {
         downloadsPathDetector: downloadsPathDetector,
         receivedFilesDirectoryResolver:
             receivedFilesDirectoryResolver ??
-            ({
-              required bool persistPermanently,
-            }) async {
+            ({required bool persistPermanently}) async {
               final Directory dir = Directory(
                 '${tempDir!.path}${Platform.pathSeparator}received',
               );
@@ -126,22 +125,39 @@ Future<void> main() async {
     }
 
     tearDown(() async {
+      const MethodChannel pathProviderChannel = MethodChannel(
+        'plugins.flutter.io/path_provider',
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProviderChannel, null);
       await isar?.close(deleteFromDisk: true);
       if (tempDir != null && await tempDir!.exists()) {
         await tempDir!.delete(recursive: true);
       }
     });
 
+    setUp(() {
+      const MethodChannel pathProviderChannel = MethodChannel(
+        'plugins.flutter.io/path_provider',
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProviderChannel, (
+            MethodCall call,
+          ) async {
+            if (call.method == 'getTemporaryDirectory') {
+              return tempDir?.path ?? Directory.systemTemp.path;
+            }
+            return null;
+          });
+    });
+
     test(
-      'acceptIncomingTransfer skips Android downloads export when target path is downloads',
+      'acceptIncomingTransfer exports to Android downloads for persistent save',
       () async {
         int exportCalls = 0;
         await buildRepository(
           connected: true,
-          androidDownloadsExporter: (
-            File _,
-            {required String fileName}
-          ) async {
+          androidDownloadsExporter: (File _, {required String fileName}) async {
             exportCalls += 1;
             return true;
           },
@@ -162,7 +178,73 @@ Future<void> main() async {
 
         await repository.acceptIncomingTransfer(transfer: transfer);
 
-        expect(exportCalls, 0);
+        expect(exportCalls, 1);
+      },
+      skip: isarRuntimeAvailable
+          ? null
+          : 'Isar native core unavailable (offline, skip env, or download failed). '
+                'Run: dart run tool/ensure_isar_test_binary.dart',
+    );
+
+    test(
+      'acceptIncomingTransfer resume reuses staged chunk without re-download',
+      () async {
+        await buildRepository(connected: true);
+        const int chunkSize = 1024 * 1024;
+        final List<int> payload = List<int>.generate(
+          chunkSize + 11,
+          (int i) => i % 251,
+        );
+        final List<int> chunk0 = payload.sublist(0, chunkSize);
+        final List<int> chunk1 = payload.sublist(chunkSize);
+        final String hash = await hasher.hashBytesAsync(payload);
+        final IncomingTransferOffer transfer = IncomingTransferOffer(
+          transferId: 't-resume-1',
+          senderId: 'sender-1',
+          receiverId: 'receiver-1',
+          fileId: 'file-resume-1',
+          fileName: 'resume.bin',
+          fileSize: payload.length,
+          fileHash: hash,
+          storagePath: 't-resume-1/file-resume-1',
+          createdAt: DateTime.now(),
+          usesTransfersV2: true,
+        );
+        await localDataSource.upsertTransferProgress(
+          TransferResumeState(
+            transferId: transfer.transferId,
+            fileId: transfer.fileId,
+            fileName: transfer.fileName,
+            totalBytes: transfer.fileSize,
+            totalChunks: 2,
+            completedChunkIndexes: <int>{0},
+            direction: TransferSessionDirection.download,
+            status: 'downloading',
+          ),
+        );
+        final Directory expectedStaging = Directory(
+          '${tempDir!.path}${Platform.pathSeparator}tranzo_dl${Platform.pathSeparator}${transfer.transferId}',
+        );
+        await expectedStaging.create(recursive: true);
+        await File(
+          '${expectedStaging.path}${Platform.pathSeparator}c0.part',
+        ).writeAsBytes(chunk0, flush: true);
+        remoteDataSource.chunkBytesByIndex[1] = chunk1;
+
+        await repository.acceptIncomingTransfer(
+          transfer: transfer,
+          persistPermanently: false,
+        );
+
+        final List<int> fetchedChunkIndexes =
+            remoteDataSource.signedUrlChunkIndexes;
+        expect(fetchedChunkIndexes.where((int i) => i == 0), isEmpty);
+        expect(fetchedChunkIndexes.where((int i) => i == 1).length, 1);
+        final File output = File(
+          '${tempDir!.path}${Platform.pathSeparator}received${Platform.pathSeparator}resume.bin',
+        );
+        expect(await output.exists(), isTrue);
+        expect(await output.readAsBytes(), payload);
       },
       skip: isarRuntimeAvailable
           ? null
@@ -497,7 +579,7 @@ class _FakeTransferService implements TransferService {
     required int chunkIndex,
     int expiresInSeconds =
         TransferService.transfersV2SignedUrlDefaultExpirySeconds,
-  }) async => 'https://example.invalid/signed';
+  }) async => 'https://example.invalid/signed?chunk=$chunkIndex';
 
   @override
   Future<void> rpcReportChunkUploaded({
@@ -610,8 +692,11 @@ TransferSessionRecord _fakeTransferSession({
 class _FakeRemoteDataSource implements TransferRemoteDataSource {
   int uploadChunkCalls = 0;
   int uploadTransfersV2ChunkCalls = 0;
+  int downloadFromSignedUrlToFileCalls = 0;
   final Completer<String> firstChunkTransferId = Completer<String>();
   final Completer<void> allowFirstChunk = Completer<void>();
+  final List<int> signedUrlChunkIndexes = <int>[];
+  final Map<int, List<int>> chunkBytesByIndex = <int, List<int>>{};
 
   @override
   Future<void> upload(TransferTaskModel task) async {}
@@ -669,10 +754,15 @@ class _FakeRemoteDataSource implements TransferRemoteDataSource {
     required String destinationPath,
     void Function(int received, int total)? onReceiveProgress,
   }) async {
+    downloadFromSignedUrlToFileCalls += 1;
+    final int chunkIndex =
+        int.tryParse(Uri.parse(signedUrl).queryParameters['chunk'] ?? '') ?? -1;
+    signedUrlChunkIndexes.add(chunkIndex);
+    final List<int> payload = chunkBytesByIndex[chunkIndex] ?? const <int>[];
     final File out = File(destinationPath);
     await out.parent.create(recursive: true);
-    await out.writeAsBytes(const <int>[]);
-    onReceiveProgress?.call(0, 0);
+    await out.writeAsBytes(payload);
+    onReceiveProgress?.call(payload.length, payload.length);
   }
 }
 

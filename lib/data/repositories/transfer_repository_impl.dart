@@ -46,7 +46,8 @@ import '../models/transfer_task_model.dart';
 
 typedef AndroidDownloadsExporter =
     Future<bool> Function(File sourceFile, {required String fileName});
-typedef GalleryExporter = Future<bool> Function(File sourceFile, String fileName);
+typedef GalleryExporter =
+    Future<bool> Function(File sourceFile, String fileName);
 typedef DownloadsPathDetector = bool Function(String directoryPath);
 typedef ReceivedFilesDirectoryResolver =
     Future<Directory> Function({required bool persistPermanently});
@@ -88,8 +89,6 @@ class TransferRepositoryImpl implements TransferRepository {
        _networkInfo = networkInfo,
        _sha256Hasher = sha256Hasher,
        _androidDownloadsExporter = androidDownloadsExporter,
-       _galleryExporter = galleryExporter,
-       _downloadsPathDetector = downloadsPathDetector,
        _receivedFilesDirectoryResolver = receivedFilesDirectoryResolver,
        _incomingPollInterval = incomingPollInterval,
        _signalPollInterval = signalPollInterval,
@@ -115,8 +114,6 @@ class TransferRepositoryImpl implements TransferRepository {
   final NetworkInfo _networkInfo;
   final Sha256Hasher _sha256Hasher;
   final AndroidDownloadsExporter _androidDownloadsExporter;
-  final GalleryExporter _galleryExporter;
-  final DownloadsPathDetector _downloadsPathDetector;
   final ReceivedFilesDirectoryResolver _receivedFilesDirectoryResolver;
   final Duration _incomingPollInterval;
   final Duration _signalPollInterval;
@@ -408,8 +405,9 @@ class TransferRepositoryImpl implements TransferRepository {
           final List<TransferSessionRecord> rows = await _transferService
               .getIncomingTransfers(receiverId);
           for (final TransferSessionRecord row in rows) {
-            final String legacyStatus =
-                (row.row['status'] as String? ?? '').trim().toLowerCase();
+            final String legacyStatus = (row.row['status'] as String? ?? '')
+                .trim()
+                .toLowerCase();
             if (legacyStatus == 'completed' ||
                 legacyStatus == 'cancelled' ||
                 legacyStatus == 'canceled' ||
@@ -587,8 +585,9 @@ class TransferRepositoryImpl implements TransferRepository {
             if (previousV2 == status) {
               continue;
             }
-            final TransferLifecycleEventType? eventV2 =
-                _statusToLifecycleEvent(status);
+            final TransferLifecycleEventType? eventV2 = _statusToLifecycleEvent(
+              status,
+            );
             if (eventV2 == null) {
               continue;
             }
@@ -707,7 +706,9 @@ class TransferRepositoryImpl implements TransferRepository {
           );
           return;
         }
-      } else if (await _localTransferSuppressesIncomingV2(transfer.transferId)) {
+      } else if (await _localTransferSuppressesIncomingV2(
+        transfer.transferId,
+      )) {
         return;
       }
 
@@ -886,24 +887,20 @@ class TransferRepositoryImpl implements TransferRepository {
       finalFileRenamedToTarget = true;
 
       if (persistPermanently) {
-        final bool shouldExportToAndroidDownloads =
-            Platform.isAndroid || !_downloadsPathDetector(appDir.path);
-        final bool addedToDownloads = shouldExportToAndroidDownloads
-            ? await _androidDownloadsExporter(
-                File(target.path),
-                fileName: transfer.fileName,
-              )
-            : false;
-        final bool addedToGallery = await _galleryExporter(
+        final bool addedToDownloads = await _androidDownloadsExporter(
           File(target.path),
-          transfer.fileName,
+          fileName: transfer.fileName,
         );
+        if (addedToDownloads) {
+          // Keep Downloads/Tranzo as single owner when export succeeds.
+          try {
+            if (await target.exists()) {
+              await target.delete();
+            }
+          } catch (_) {}
+        }
         final String locationLabel = describeReceivedSaveLocation(appDir);
-        final String summary = addedToGallery && addedToDownloads
-            ? 'Saved to Downloads/Tranzo and also to your Photos library (album Tranzo).'
-            : addedToGallery
-            ? 'Also saved to your Photos library (album Tranzo). File copy: $locationLabel.'
-            : addedToDownloads
+        final String summary = addedToDownloads
             ? 'Saved to Downloads/Tranzo.'
             : 'Saved to $locationLabel.';
         onReceivedFileSaved?.call(summary);
@@ -1131,35 +1128,37 @@ class TransferRepositoryImpl implements TransferRepository {
       }
     }
 
-    final Map<String, String> shortCodeByUserId = await _loadShortCodeByUserId();
-    final List<TransferEntity> out = merged.values
-        .map(
-          (TransferEntity transfer) => TransferEntity(
-            id: transfer.id,
-            senderId: transfer.senderId,
-            receiverId: transfer.receiverId,
-            status: transfer.status,
-            createdAt: transfer.createdAt,
-            fileName: transfer.fileName,
-            fileSize: transfer.fileSize,
-            senderUsername: _resolveParticipantLabel(
-              shortCode: shortCodeByUserId[transfer.senderId],
-              fallbackLabel: transfer.senderUsername,
-              userId: transfer.senderId,
-            ),
-            receiverUsername: _resolveParticipantLabel(
-              shortCode: shortCodeByUserId[transfer.receiverId],
-              fallbackLabel: transfer.receiverUsername,
-              userId: transfer.receiverId,
-            ),
-            expiresAt: transfer.expiresAt,
-          ),
-        )
-        .toList()
-      ..sort(
-        (TransferEntity a, TransferEntity b) =>
-            b.createdAt.compareTo(a.createdAt),
-      );
+    final Map<String, String> shortCodeByUserId =
+        await _loadShortCodeByUserId();
+    final List<TransferEntity> out =
+        merged.values
+            .map(
+              (TransferEntity transfer) => TransferEntity(
+                id: transfer.id,
+                senderId: transfer.senderId,
+                receiverId: transfer.receiverId,
+                status: transfer.status,
+                createdAt: transfer.createdAt,
+                fileName: transfer.fileName,
+                fileSize: transfer.fileSize,
+                senderUsername: _resolveParticipantLabel(
+                  shortCode: shortCodeByUserId[transfer.senderId],
+                  fallbackLabel: transfer.senderUsername,
+                  userId: transfer.senderId,
+                ),
+                receiverUsername: _resolveParticipantLabel(
+                  shortCode: shortCodeByUserId[transfer.receiverId],
+                  fallbackLabel: transfer.receiverUsername,
+                  userId: transfer.receiverId,
+                ),
+                expiresAt: transfer.expiresAt,
+              ),
+            )
+            .toList()
+          ..sort(
+            (TransferEntity a, TransferEntity b) =>
+                b.createdAt.compareTo(a.createdAt),
+          );
     return out;
   }
 
@@ -1168,7 +1167,8 @@ class TransferRepositoryImpl implements TransferRepository {
     String userId,
   ) async {
     final List<TransferEntity> history = await getTransferHistory(userId);
-    final Map<String, String> shortCodeByUserId = await _loadShortCodeByUserId();
+    final Map<String, String> shortCodeByUserId =
+        await _loadShortCodeByUserId();
     final Map<String, ProfileInteractionEntity> interactionsByUserId =
         <String, ProfileInteractionEntity>{};
 
@@ -1540,9 +1540,7 @@ class TransferRepositoryImpl implements TransferRepository {
             fileId: file.id,
           );
           _clearRetryState(transferUuid);
-          await _backgroundRuntimeService.cancelRetry(
-            transferId: transferUuid,
-          );
+          await _backgroundRuntimeService.cancelRetry(transferId: transferUuid);
         } catch (error) {
           final String reason = error.toString();
           if (activeTransferId != null) {
@@ -2019,8 +2017,7 @@ class TransferRepositoryImpl implements TransferRepository {
     }
 
     final TransferStatus cur = local.status;
-    if (remote == TransferStatus.failed &&
-        cur == TransferStatus.completed) {
+    if (remote == TransferStatus.failed && cur == TransferStatus.completed) {
       return;
     }
     const Set<TransferStatus> terminal = <TransferStatus>{
@@ -2147,9 +2144,8 @@ class TransferRepositoryImpl implements TransferRepository {
       fileSize: record.fileSize,
       fileHash: record.fileHash,
       storagePath: record.storageRoot,
-      createdAt: DateTime.tryParse(
-            record.row['created_at'] as String? ?? '',
-          ) ??
+      createdAt:
+          DateTime.tryParse(record.row['created_at'] as String? ?? '') ??
           DateTime.now(),
       trustStatus: trustStatus,
       requiresApproval: trustStatus == SenderTrustStatus.unknown,
@@ -2238,17 +2234,48 @@ class TransferRepositoryImpl implements TransferRepository {
           code: AppErrorCode.chunkTransferFailed,
         );
       }
+      if (chunksByIndex.containsKey(descriptor.index)) {
+        assembled.addAll(chunksByIndex[descriptor.index]!);
+        continue;
+      }
+      if (transfer.usesTransfersV2) {
+        final List<int>? stagedBytes = await _readStagedChunkBytes(
+          chunkStagingPath: chunkStagingPath,
+          chunkIndex: descriptor.index,
+        );
+        if (stagedBytes == null) {
+          throw const AppException(
+            'Missing staged chunk during integrity verification.',
+            code: AppErrorCode.chunkTransferFailed,
+          );
+        }
+        assembled.addAll(stagedBytes);
+        continue;
+      }
       assembled.addAll(
-        chunksByIndex[descriptor.index] ??
-            await _downloadChunkWithRetries(
-              transfer: transfer,
-              chunkIndex: descriptor.index,
-              chunkStagingPath: chunkStagingPath,
-              onDownloadProgress: onDownloadProgress,
-            ),
+        await _downloadChunkWithRetries(
+          transfer: transfer,
+          chunkIndex: descriptor.index,
+          chunkStagingPath: chunkStagingPath,
+          onDownloadProgress: onDownloadProgress,
+        ),
       );
     }
     return assembled;
+  }
+
+  Future<List<int>?> _readStagedChunkBytes({
+    required String? chunkStagingPath,
+    required int chunkIndex,
+  }) async {
+    if (chunkStagingPath == null || chunkStagingPath.isEmpty) {
+      return null;
+    }
+    final File chunkFile = File(p.join(chunkStagingPath, 'c$chunkIndex.part'));
+    if (!await chunkFile.exists()) {
+      return null;
+    }
+    return chunkFile.readAsBytes();
   }
 
   Future<List<int>> _downloadChunkWithRetries({
@@ -2298,14 +2325,15 @@ class TransferRepositoryImpl implements TransferRepository {
           );
           final File chunkFile = File(chunkPath);
           if (await chunkFile.exists()) {
-            await chunkFile.delete();
+            // Resume/integrity assembly can reuse already-downloaded chunks.
+            return chunkFile.readAsBytes();
           }
-          final String signedUrl =
-              await _transferService.createSignedUrlForTransfersV2Chunk(
-            senderId: transfer.senderId,
-            transferUuid: transfer.transferId,
-            chunkIndex: chunkIndex,
-          );
+          final String signedUrl = await _transferService
+              .createSignedUrlForTransfersV2Chunk(
+                senderId: transfer.senderId,
+                transferUuid: transfer.transferId,
+                chunkIndex: chunkIndex,
+              );
           try {
             await _remoteDataSource.downloadFromSignedUrlToFile(
               signedUrl: signedUrl,
@@ -2336,9 +2364,6 @@ class TransferRepositoryImpl implements TransferRepository {
             );
           }
           chunk = await chunkFile.readAsBytes();
-          if (await chunkFile.exists()) {
-            await chunkFile.delete();
-          }
         } else {
           chunk = await _remoteDataSource.downloadChunk(
             sessionId: transfer.transferId,
@@ -2581,5 +2606,4 @@ class TransferRepositoryImpl implements TransferRepository {
     final String normalized = directoryPath.replaceAll('\\', '/').toLowerCase();
     return normalized.contains('/download/');
   }
-
 }
