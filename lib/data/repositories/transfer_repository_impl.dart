@@ -769,7 +769,7 @@ class TransferRepositoryImpl implements TransferRepository {
           chunkStagingPath: downloadChunkStagingDir?.path,
           onDownloadProgress: throttledDownloadProgress,
         );
-        final String digest = _sha256Hasher.hashBytes(assembled);
+        final String digest = await _sha256Hasher.hashBytesAsync(assembled);
         if (digest == transfer.fileHash) {
           verified = true;
           break;
