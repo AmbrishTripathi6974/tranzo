@@ -34,6 +34,7 @@ import 'package:tranzo/transfer_engine/upload/upload_manager.dart';
 import 'support/isar_test_runtime.dart';
 
 Future<void> main() async {
+  TestWidgetsFlutterBinding.ensureInitialized();
   final bool isarRuntimeAvailable = await ensureIsarCoreForTests();
 
   group('Phase-2b repository integration', () {
@@ -51,6 +52,12 @@ Future<void> main() async {
 
     Future<void> buildRepository({
       required bool connected,
+      AndroidDownloadsExporter androidDownloadsExporter =
+          _noopAndroidDownloadsExport,
+      GalleryExporter galleryExporter = _noopGalleryExport,
+      DownloadsPathDetector downloadsPathDetector =
+          TransferRepositoryImpl.defaultDownloadsPathDetector,
+      ReceivedFilesDirectoryResolver? receivedFilesDirectoryResolver,
       Duration incomingPollInterval = const Duration(milliseconds: 40),
       Duration signalPollInterval = const Duration(milliseconds: 40),
     }) async {
@@ -99,6 +106,20 @@ Future<void> main() async {
         backgroundRuntimeService: runtimeService,
         networkInfo: networkInfo,
         sha256Hasher: hasher,
+        androidDownloadsExporter: androidDownloadsExporter,
+        galleryExporter: galleryExporter,
+        downloadsPathDetector: downloadsPathDetector,
+        receivedFilesDirectoryResolver:
+            receivedFilesDirectoryResolver ??
+            ({
+              required bool persistPermanently,
+            }) async {
+              final Directory dir = Directory(
+                '${tempDir!.path}${Platform.pathSeparator}received',
+              );
+              await dir.create(recursive: true);
+              return dir;
+            },
         incomingPollInterval: incomingPollInterval,
         signalPollInterval: signalPollInterval,
       );
@@ -110,6 +131,44 @@ Future<void> main() async {
         await tempDir!.delete(recursive: true);
       }
     });
+
+    test(
+      'acceptIncomingTransfer skips Android downloads export when target path is downloads',
+      () async {
+        int exportCalls = 0;
+        await buildRepository(
+          connected: true,
+          androidDownloadsExporter: (
+            File _,
+            {required String fileName}
+          ) async {
+            exportCalls += 1;
+            return true;
+          },
+          downloadsPathDetector: (_) => true,
+        );
+        final String emptyHash = await hasher.hashBytesAsync(const <int>[]);
+        final IncomingTransferOffer transfer = IncomingTransferOffer(
+          transferId: 't-download-skip-1',
+          senderId: 'sender-1',
+          receiverId: 'receiver-1',
+          fileId: 'file-download-skip-1',
+          fileName: 'photo.png',
+          fileSize: 0,
+          fileHash: emptyHash,
+          storagePath: 't-download-skip-1/file-download-skip-1',
+          createdAt: DateTime.now(),
+        );
+
+        await repository.acceptIncomingTransfer(transfer: transfer);
+
+        expect(exportCalls, 0);
+      },
+      skip: isarRuntimeAvailable
+          ? null
+          : 'Isar native core unavailable (offline, skip env, or download failed). '
+                'Run: dart run tool/ensure_isar_test_binary.dart',
+    );
 
     test(
       'cancel during chunk execution marks file as failed and cancels retry',
@@ -304,6 +363,14 @@ Future<void> main() async {
     );
   });
 }
+
+Future<bool> _noopAndroidDownloadsExport(
+  File sourceFile, {
+  required String fileName,
+}) async => false;
+
+Future<bool> _noopGalleryExport(File sourceFile, String fileName) async =>
+    false;
 
 class _FakeTransferService implements TransferService {
   final List<String> updatedTransferIds = <String>[];

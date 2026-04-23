@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:workmanager/workmanager.dart';
@@ -12,6 +13,7 @@ import 'supabase_client.dart';
 
 const String kTransferRetryTaskName = 'tranzo_transfer_retry';
 const String kTransferRetryTag = 'tranzo_transfer_retry_tag';
+const int kTransferForegroundServiceId = 2322;
 
 typedef TransferRetryExecutor =
     Future<void> Function(String transferId, bool userInitiated);
@@ -137,10 +139,16 @@ class NoopBackgroundTransferRuntimeService
 
 class AndroidBackgroundTransferRuntimeService
     implements BackgroundTransferRuntimeService {
-  AndroidBackgroundTransferRuntimeService();
+  AndroidBackgroundTransferRuntimeService({
+    AndroidTransferProgressNotificationBridge? progressNotificationBridge,
+  }) : _progressNotificationBridge =
+           progressNotificationBridge ??
+           MethodChannelAndroidTransferProgressNotificationBridge();
 
   final Set<String> _activeTransferIds = <String>{};
-  String? _lastRenderedNotification;
+  _NotificationRenderState? _lastRenderedState;
+  final TransferProgressTracker _progressTracker = TransferProgressTracker();
+  final AndroidTransferProgressNotificationBridge _progressNotificationBridge;
 
   @override
   Future<void> initialize() async {
@@ -154,11 +162,15 @@ class AndroidBackgroundTransferRuntimeService
         channelName: 'Transfer progress',
         channelDescription:
             'Shows active transfer progress and keeps transfers alive.',
-        channelImportance: NotificationChannelImportance.HIGH,
-        priority: NotificationPriority.HIGH,
+        // Use low-priority + onlyAlertOnce to avoid re-alert spam while
+        // progress updates continue on the same ongoing foreground notification.
+        channelImportance: NotificationChannelImportance.LOW,
+        priority: NotificationPriority.LOW,
         enableVibration: false,
         playSound: false,
         showWhen: true,
+        onlyAlertOnce: true,
+        visibility: NotificationVisibility.VISIBILITY_PUBLIC,
       ),
       iosNotificationOptions: const IOSNotificationOptions(),
       foregroundTaskOptions: ForegroundTaskOptions(
@@ -196,12 +208,15 @@ class AndroidBackgroundTransferRuntimeService
       return;
     }
 
-    final String notificationText =
-        '${_sanitizeFileName(fileName)} - $progressPercent%';
+    final _NotificationRenderState state = _buildRenderState(
+      transferId: transferId,
+      fileName: fileName,
+      progressPercent: progressPercent,
+    );
     final dynamic startResult = await FlutterForegroundTask.startService(
-      serviceId: 2322,
+      serviceId: kTransferForegroundServiceId,
       notificationTitle: 'Tranzo transfer',
-      notificationText: notificationText,
+      notificationText: state.notificationText,
       callback: transferForegroundStartCallback,
     );
     switch (startResult) {
@@ -212,7 +227,11 @@ class AndroidBackgroundTransferRuntimeService
           error: error,
         );
       default:
-        _lastRenderedNotification = notificationText;
+        await _progressNotificationBridge.showProgress(
+          fileName: state.fileName,
+          progressPercent: state.progressPercent,
+        );
+        _lastRenderedState = state;
     }
   }
 
@@ -237,17 +256,24 @@ class AndroidBackgroundTransferRuntimeService
       return;
     }
 
-    final String notificationText =
-        '${_sanitizeFileName(fileName)} - $progressPercent%';
-    if (_lastRenderedNotification == notificationText) {
+    final _NotificationRenderState state = _buildRenderState(
+      transferId: transferId,
+      fileName: fileName,
+      progressPercent: progressPercent,
+    );
+    if (_lastRenderedState == state) {
       return;
     }
 
     await FlutterForegroundTask.updateService(
       notificationTitle: 'Tranzo transfer',
-      notificationText: notificationText,
+      notificationText: state.notificationText,
     );
-    _lastRenderedNotification = notificationText;
+    await _progressNotificationBridge.showProgress(
+      fileName: state.fileName,
+      progressPercent: state.progressPercent,
+    );
+    _lastRenderedState = state;
   }
 
   @override
@@ -257,8 +283,10 @@ class AndroidBackgroundTransferRuntimeService
     }
     if (transferId != null && transferId.isNotEmpty) {
       _activeTransferIds.remove(transferId);
+      _progressTracker.remove(transferId);
     } else {
       _activeTransferIds.clear();
+      _progressTracker.clear();
     }
     if (_activeTransferIds.isNotEmpty) {
       return;
@@ -266,14 +294,14 @@ class AndroidBackgroundTransferRuntimeService
 
     final bool running = await FlutterForegroundTask.isRunningService;
     if (!running) {
-      _lastRenderedNotification = null;
+      _lastRenderedState = null;
       return;
     }
 
     final dynamic stopResult = await FlutterForegroundTask.stopService();
     switch (stopResult) {
       case ServiceRequestSuccess():
-        _lastRenderedNotification = null;
+        _lastRenderedState = null;
         return;
       case ServiceRequestFailure(:final error):
         developer.log(
@@ -293,7 +321,7 @@ class AndroidBackgroundTransferRuntimeService
     await Future<void>.delayed(const Duration(milliseconds: 250));
     final bool stillRunning = await FlutterForegroundTask.isRunningService;
     if (!stillRunning) {
-      _lastRenderedNotification = null;
+      _lastRenderedState = null;
       return;
     }
 
@@ -306,7 +334,7 @@ class AndroidBackgroundTransferRuntimeService
           error: error,
         );
       default:
-        _lastRenderedNotification = null;
+        _lastRenderedState = null;
         break;
     }
   }
@@ -351,5 +379,121 @@ class AndroidBackgroundTransferRuntimeService
       return 'Unknown file';
     }
     return trimmed;
+  }
+
+  _NotificationRenderState _buildRenderState({
+    required String transferId,
+    required String fileName,
+    required int progressPercent,
+  }) {
+    final int monotonic = _progressTracker.nextProgress(transferId, progressPercent);
+    final String sanitizedFileName = _sanitizeFileName(fileName);
+    return _NotificationRenderState(
+      transferId: transferId,
+      fileName: sanitizedFileName,
+      progressPercent: monotonic,
+      notificationText: '$sanitizedFileName - $monotonic%',
+    );
+  }
+}
+
+@visibleForTesting
+class TransferProgressTracker {
+  final Map<String, int> _maxRenderedProgressByTransferId = <String, int>{};
+
+  int nextProgress(String transferId, int progressPercent) {
+    final int clamped = progressPercent.clamp(0, 100);
+    return _maxRenderedProgressByTransferId.update(
+      transferId,
+      (int previous) => clamped > previous ? clamped : previous,
+      ifAbsent: () => clamped,
+    );
+  }
+
+  void remove(String transferId) {
+    _maxRenderedProgressByTransferId.remove(transferId);
+  }
+
+  void clear() {
+    _maxRenderedProgressByTransferId.clear();
+  }
+}
+
+@immutable
+class _NotificationRenderState {
+  const _NotificationRenderState({
+    required this.transferId,
+    required this.fileName,
+    required this.progressPercent,
+    required this.notificationText,
+  });
+
+  final String transferId;
+  final String fileName;
+  final int progressPercent;
+  final String notificationText;
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) {
+      return true;
+    }
+    return other is _NotificationRenderState &&
+        other.transferId == transferId &&
+        other.fileName == fileName &&
+        other.progressPercent == progressPercent;
+  }
+
+  @override
+  int get hashCode => Object.hash(transferId, fileName, progressPercent);
+}
+
+abstract interface class AndroidTransferProgressNotificationBridge {
+  Future<void> showProgress({
+    required String fileName,
+    required int progressPercent,
+  });
+}
+
+class MethodChannelAndroidTransferProgressNotificationBridge
+    implements AndroidTransferProgressNotificationBridge {
+  MethodChannelAndroidTransferProgressNotificationBridge({
+    MethodChannel? channel,
+    bool Function()? isSupportedPlatform,
+  }) : _channel =
+           channel ?? const MethodChannel('tranzo/transfer_progress_notification'),
+       _isSupportedPlatform =
+           isSupportedPlatform ??
+           _defaultIsSupportedPlatform;
+
+  final MethodChannel _channel;
+  final bool Function() _isSupportedPlatform;
+
+  @override
+  Future<void> showProgress({
+    required String fileName,
+    required int progressPercent,
+  }) async {
+    if (!_isSupportedPlatform()) {
+      return;
+    }
+    try {
+      await _channel.invokeMethod<bool>('show_progress', <String, dynamic>{
+        'fileName': fileName,
+        'progressPercent': progressPercent.clamp(0, 100),
+      });
+    } on MissingPluginException {
+      // Native bridge unavailable in this runtime; foreground text updates remain.
+    } on PlatformException catch (error) {
+      developer.log(
+        'transfer_progress_native_notify_failed',
+        name: 'transfer',
+        error: error,
+      );
+    }
+  }
+
+  static bool _defaultIsSupportedPlatform() {
+    return !kIsWeb && Platform.isAndroid;
   }
 }

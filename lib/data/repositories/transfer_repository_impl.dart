@@ -44,6 +44,13 @@ import '../datasources/local/transfer_local_data_source.dart';
 import '../datasources/remote/transfer_remote_data_source.dart';
 import '../models/transfer_task_model.dart';
 
+typedef AndroidDownloadsExporter =
+    Future<bool> Function(File sourceFile, {required String fileName});
+typedef GalleryExporter = Future<bool> Function(File sourceFile, String fileName);
+typedef DownloadsPathDetector = bool Function(String directoryPath);
+typedef ReceivedFilesDirectoryResolver =
+    Future<Directory> Function({required bool persistPermanently});
+
 class TransferRepositoryImpl implements TransferRepository {
   TransferRepositoryImpl({
     required TransferRemoteDataSource remoteDataSource,
@@ -58,6 +65,13 @@ class TransferRepositoryImpl implements TransferRepository {
     required BackgroundTransferRuntimeService backgroundRuntimeService,
     required NetworkInfo networkInfo,
     required Sha256Hasher sha256Hasher,
+    AndroidDownloadsExporter androidDownloadsExporter =
+        tryStoreReceivedFileInAndroidDownloads,
+    GalleryExporter galleryExporter = tryExportReceivedMediaToPhotoLibrary,
+    DownloadsPathDetector downloadsPathDetector =
+        TransferRepositoryImpl.defaultDownloadsPathDetector,
+    ReceivedFilesDirectoryResolver receivedFilesDirectoryResolver =
+        resolvedReceivedFilesDirectory,
     Duration incomingPollInterval = const Duration(seconds: 3),
     Duration signalPollInterval = const Duration(seconds: 2),
     Duration pollingErrorBackoffMax = const Duration(seconds: 30),
@@ -73,6 +87,10 @@ class TransferRepositoryImpl implements TransferRepository {
        _backgroundRuntimeService = backgroundRuntimeService,
        _networkInfo = networkInfo,
        _sha256Hasher = sha256Hasher,
+       _androidDownloadsExporter = androidDownloadsExporter,
+       _galleryExporter = galleryExporter,
+       _downloadsPathDetector = downloadsPathDetector,
+       _receivedFilesDirectoryResolver = receivedFilesDirectoryResolver,
        _incomingPollInterval = incomingPollInterval,
        _signalPollInterval = signalPollInterval,
        _pollingErrorBackoffMax = pollingErrorBackoffMax {
@@ -96,6 +114,10 @@ class TransferRepositoryImpl implements TransferRepository {
   final BackgroundTransferRuntimeService _backgroundRuntimeService;
   final NetworkInfo _networkInfo;
   final Sha256Hasher _sha256Hasher;
+  final AndroidDownloadsExporter _androidDownloadsExporter;
+  final GalleryExporter _galleryExporter;
+  final DownloadsPathDetector _downloadsPathDetector;
+  final ReceivedFilesDirectoryResolver _receivedFilesDirectoryResolver;
   final Duration _incomingPollInterval;
   final Duration _signalPollInterval;
   final Duration _pollingErrorBackoffMax;
@@ -839,7 +861,7 @@ class TransferRepositoryImpl implements TransferRepository {
         );
       }
 
-      final Directory appDir = await resolvedReceivedFilesDirectory(
+      final Directory appDir = await _receivedFilesDirectoryResolver(
         persistPermanently: persistPermanently,
       );
       final File target = await _resolveUniqueTargetFile(
@@ -864,11 +886,15 @@ class TransferRepositoryImpl implements TransferRepository {
       finalFileRenamedToTarget = true;
 
       if (persistPermanently) {
-        final bool addedToDownloads = await tryStoreReceivedFileInAndroidDownloads(
-          File(target.path),
-          fileName: transfer.fileName,
-        );
-        final bool addedToGallery = await tryExportReceivedMediaToPhotoLibrary(
+        final bool shouldExportToAndroidDownloads =
+            Platform.isAndroid || !_downloadsPathDetector(appDir.path);
+        final bool addedToDownloads = shouldExportToAndroidDownloads
+            ? await _androidDownloadsExporter(
+                File(target.path),
+                fileName: transfer.fileName,
+              )
+            : false;
+        final bool addedToGallery = await _galleryExporter(
           File(target.path),
           transfer.fileName,
         );
@@ -2549,6 +2575,11 @@ class TransferRepositoryImpl implements TransferRepository {
       }
       copy += 1;
     }
+  }
+
+  static bool defaultDownloadsPathDetector(String directoryPath) {
+    final String normalized = directoryPath.replaceAll('\\', '/').toLowerCase();
+    return normalized.contains('/download/');
   }
 
 }
