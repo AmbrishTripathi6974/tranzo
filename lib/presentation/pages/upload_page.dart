@@ -19,6 +19,7 @@ class UploadPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: const Text('Send'), centerTitle: false),
       body: SafeArea(
         child: LayoutBuilder(
@@ -29,7 +30,7 @@ class UploadPage extends StatelessWidget {
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: maxWidth),
                 child: const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  padding: EdgeInsets.fromLTRB(20, 16, 20, 20),
                   child: _UploadForm(),
                 ),
               ),
@@ -242,146 +243,103 @@ class _UploadFormState extends State<_UploadForm> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 16),
                 ],
-                Card(
-                  clipBehavior: Clip.antiAlias,
-                  elevation: 0,
-                  color: theme.colorScheme.surfaceContainerLow,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: <Color>[
-                              theme.colorScheme.primaryContainer.withValues(
-                                alpha: 0.55,
-                              ),
-                              theme.colorScheme.surfaceContainerLow,
-                            ],
-                          ),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              CircleAvatar(
-                                radius: 26,
-                                backgroundColor: theme.colorScheme.primary,
-                                child: Icon(
-                                  Icons.outbound_rounded,
-                                  size: 28,
-                                  color: theme.colorScheme.onPrimary,
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    Text(
-                                      'Send a transfer',
-                                      style: theme.textTheme.titleLarge
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                            letterSpacing: -0.2,
-                                          ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Add files, confirm the recipient, then '
-                                      'start the upload.',
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(
-                                            color: theme
-                                                .colorScheme
-                                                .onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                        child: TextField(
-                          controller: _recipientController,
-                          onChanged: (String value) {
-                            context.read<TransferBloc>().add(
-                              TransferUploadRecipientDraftChanged(value),
-                            );
-                          },
-                          textCapitalization: TextCapitalization.characters,
-                          decoration: InputDecoration(
-                            labelText: 'Recipient code',
-                            hintText: 'e.g. ABC123',
-                            filled: true,
-                            prefixIcon: const Icon(Icons.tag_rounded),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
+                      child: Icon(
+                        Icons.outbound_rounded,
+                        size: 24,
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Send a transfer',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.2,
                             ),
                           ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            OutlinedButton.icon(
-                              onPressed: canPick
-                                  ? () => _pickFiles(context)
-                                  : null,
-                              icon: const Icon(Icons.add_rounded),
-                              label: const Text('Add files'),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                              ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Add files, confirm the recipient, then start the upload.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
-                            const SizedBox(height: 10),
-                            FilledButton.icon(
-                              onPressed: canSend
-                                  ? () => _startUpload(context, transferState)
-                                  : null,
-                              icon: const Icon(Icons.cloud_upload_rounded),
-                              label: const Text('Start transfer'),
-                              style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                              ),
-                            ),
-                            if (localOnlyMode) ...<Widget>[
-                              const SizedBox(height: 8),
-                              Text(
-                                'Cloud pairing is disabled in offline/local mode.',
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: _recipientController,
+                  onChanged: (String value) {
+                    context.read<TransferBloc>().add(
+                      TransferUploadRecipientDraftChanged(value),
+                    );
+                  },
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: InputDecoration(
+                    labelText: 'Recipient code',
+                    hintText: 'e.g. ABC123',
+                    filled: true,
+                    prefixIcon: const Icon(Icons.tag_rounded),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: canPick ? () => _pickFiles(context) : null,
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Add files'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  onPressed: canSend
+                      ? () => _startUpload(context, transferState)
+                      : null,
+                  icon: const Icon(Icons.cloud_upload_rounded),
+                  label: const Text('Start transfer'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+                if (localOnlyMode) ...<Widget>[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Cloud pairing is disabled in offline/local mode.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
                 if (transferState.errorMessage != null) ...<Widget>[
                   const SizedBox(height: 10),
                   Material(
@@ -411,7 +369,7 @@ class _UploadFormState extends State<_UploadForm> {
                   ),
                 ],
                 if (transferState.showInAppProgress) ...<Widget>[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: LinearProgressIndicator(
@@ -422,13 +380,13 @@ class _UploadFormState extends State<_UploadForm> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 14),
+                const SizedBox(height: 20),
                 Row(
                   children: <Widget>[
                     Text(
                       'Files',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -452,12 +410,21 @@ class _UploadFormState extends State<_UploadForm> {
                       ),
                   ],
                 ),
+                const SizedBox(height: 4),
+                Text(
+                  selected.isEmpty
+                      ? 'Files you add will appear here.'
+                      : 'Review your selected files before sending.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
                 const SizedBox(height: 10),
                 Expanded(
                   child: selected.isEmpty
                       ? _UploadEmptyState(theme: theme)
                       : ListView.separated(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          padding: const EdgeInsets.only(top: 2, bottom: 4),
                           itemCount: selected.length,
                           separatorBuilder: (BuildContext context, int index) =>
                               const SizedBox(height: 10),

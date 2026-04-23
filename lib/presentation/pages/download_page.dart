@@ -36,7 +36,7 @@ class _DownloadPageState extends State<DownloadPage> {
                 ),
               Expanded(
                 child: ListView.separated(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
                   itemCount: state.incomingTransfers.length,
                   separatorBuilder: (context, index) =>
                       const SizedBox(height: 12),
@@ -59,23 +59,46 @@ class _DownloadPageState extends State<DownloadPage> {
                       isActiveDownload: isActiveDownload,
                     );
                     return Card(
+                      clipBehavior: Clip.antiAlias,
                       child: Padding(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: <Widget>[
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primaryContainer,
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    _fileIcon(transfer.fileName),
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimaryContainer,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
                                     transfer.fileName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                     style: Theme.of(context).textTheme.titleMedium,
                                   ),
                                 ),
+                                const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
+                                    horizontal: 10,
+                                    vertical: 5,
                                   ),
                                   decoration: BoxDecoration(
                                     color: Theme.of(
@@ -90,13 +113,23 @@ class _DownloadPageState extends State<DownloadPage> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 10),
                             Text(
-                              'From: ${transfer.senderId}',
+                              'From ${_shortId(transfer.senderId)}',
+                              style: Theme.of(context).textTheme.bodyMedium,
                             ),
-                            Text('${transfer.fileSize} bytes'),
+                            const SizedBox(height: 6),
+                            Text(
+                              _formatBytes(transfer.fileSize),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
                             if (isActiveDownload) ...<Widget>[
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 12),
                               LinearProgressIndicator(value: progressValue),
                               const SizedBox(height: 6),
                               Text(
@@ -107,7 +140,7 @@ class _DownloadPageState extends State<DownloadPage> {
                             if (!isActiveDownload &&
                                 remoteProgress != null &&
                                 transfer.usesTransfersV2) ...<Widget>[
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 12),
                               LinearProgressIndicator(value: remoteProgress),
                               const SizedBox(height: 6),
                               Text(
@@ -118,11 +151,18 @@ class _DownloadPageState extends State<DownloadPage> {
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 14),
                             Row(
                               children: <Widget>[
                                 Expanded(
                                   child: FilledButton(
+                                    style: FilledButton.styleFrom(
+                                      minimumSize: const Size.fromHeight(44),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                    ),
                                     onPressed: isActiveDownload ||
                                             (transfer.usesTransfersV2 &&
                                                 !<String>{
@@ -233,9 +273,16 @@ class _DownloadPageState extends State<DownloadPage> {
                                     child: const Text('Download'),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 10),
                                 Expanded(
                                   child: FilledButton.tonal(
+                                    style: FilledButton.styleFrom(
+                                      minimumSize: const Size.fromHeight(44),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                    ),
                                     onPressed: isActiveDownload
                                         ? null
                                         : () {
@@ -332,5 +379,65 @@ class _DownloadPageState extends State<DownloadPage> {
       case TransferLifecycleEventType.transferStarted:
         return 'Pending';
     }
+  }
+
+  IconData _fileIcon(String fileName) {
+    final int dot = fileName.lastIndexOf('.');
+    final String ext = dot >= 0
+        ? fileName.substring(dot + 1).toLowerCase()
+        : '';
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'webp':
+      case 'heic':
+        return Icons.image_outlined;
+      case 'mp4':
+      case 'mov':
+      case 'mkv':
+      case 'webm':
+        return Icons.movie_outlined;
+      case 'mp3':
+      case 'wav':
+      case 'flac':
+      case 'aac':
+        return Icons.audio_file_outlined;
+      case 'pdf':
+        return Icons.picture_as_pdf_outlined;
+      case 'zip':
+      case 'rar':
+      case '7z':
+        return Icons.folder_zip_outlined;
+      case 'apk':
+        return Icons.android_rounded;
+      default:
+        return Icons.insert_drive_file_outlined;
+    }
+  }
+
+  String _shortId(String id) {
+    if (id.length <= 14) {
+      return id;
+    }
+    return '${id.substring(0, 6)}…${id.substring(id.length - 4)}';
+  }
+
+  String _formatBytes(int bytes) {
+    const List<String> units = <String>['B', 'KB', 'MB', 'GB', 'TB'];
+    if (bytes <= 0) {
+      return '0 B';
+    }
+    double size = bytes.toDouble();
+    int unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    final String formatted = size >= 100
+        ? size.toStringAsFixed(0)
+        : size.toStringAsFixed(1);
+    return '$formatted ${units[unitIndex]}';
   }
 }

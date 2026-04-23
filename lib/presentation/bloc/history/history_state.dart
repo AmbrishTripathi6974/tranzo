@@ -14,6 +14,9 @@ class HistoryState extends Equatable {
     this.filterType = HistoryFilterType.all,
     this.userId,
     this.errorMessage,
+    this.hasMore = false,
+    this.isLoadingMore = false,
+    this.isRefreshing = false,
   });
 
   final HistoryStatus status;
@@ -22,6 +25,9 @@ class HistoryState extends Equatable {
   final HistoryFilterType filterType;
   final String? userId;
   final String? errorMessage;
+  final bool hasMore;
+  final bool isLoadingMore;
+  final bool isRefreshing;
 
   HistoryState copyWith({
     HistoryStatus? status,
@@ -30,6 +36,9 @@ class HistoryState extends Equatable {
     HistoryFilterType? filterType,
     String? userId,
     String? errorMessage,
+    bool? hasMore,
+    bool? isLoadingMore,
+    bool? isRefreshing,
     bool clearErrorMessage = false,
   }) {
     return HistoryState(
@@ -41,6 +50,9 @@ class HistoryState extends Equatable {
       errorMessage: clearErrorMessage
           ? null
           : (errorMessage ?? this.errorMessage),
+      hasMore: hasMore ?? this.hasMore,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      isRefreshing: isRefreshing ?? this.isRefreshing,
     );
   }
 
@@ -52,5 +64,8 @@ class HistoryState extends Equatable {
     filterType,
     userId,
     errorMessage,
+    hasMore,
+    isLoadingMore,
+    isRefreshing,
   ];
 }

@@ -26,3 +26,7 @@ class FilterChanged extends HistoryEvent {
   @override
   List<Object?> get props => <Object?>[filterType];
 }
+
+class LoadMoreHistory extends HistoryEvent {
+  const LoadMoreHistory();
+}

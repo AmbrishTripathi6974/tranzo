@@ -22,6 +22,24 @@ class App extends StatelessWidget {
   static final GlobalKey<ScaffoldMessengerState> _messengerKey =
       GlobalKey<ScaffoldMessengerState>();
   static bool _nativeSplashRemoved = false;
+  static final DateTime _launchTimestamp = DateTime.now();
+  static const Duration _minimumSplashDuration = Duration(milliseconds: 1200);
+
+  static Future<void> _removeNativeSplashWhenReady() async {
+    if (_nativeSplashRemoved) {
+      return;
+    }
+    final Duration elapsed = DateTime.now().difference(_launchTimestamp);
+    final Duration remaining = _minimumSplashDuration - elapsed;
+    if (remaining > Duration.zero) {
+      await Future<void>.delayed(remaining);
+    }
+    if (_nativeSplashRemoved) {
+      return;
+    }
+    _nativeSplashRemoved = true;
+    FlutterNativeSplash.remove();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,12 +60,8 @@ class App extends StatelessWidget {
                 return previous.activeAction == AuthAction.bootstrap &&
                     current.activeAction != AuthAction.bootstrap;
               },
-              listener: (BuildContext context, AuthState state) {
-                if (_nativeSplashRemoved) {
-                  return;
-                }
-                _nativeSplashRemoved = true;
-                FlutterNativeSplash.remove();
+              listener: (BuildContext context, AuthState state) async {
+                await _removeNativeSplashWhenReady();
               },
             ),
             BlocListener<AuthBloc, AuthState>(

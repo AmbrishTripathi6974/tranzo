@@ -7,10 +7,12 @@ class TransferStatusCard extends StatelessWidget {
     super.key,
     required this.status,
     this.detailMessage,
+    this.onDetailTap,
   });
 
   final TransferStatus status;
   final String? detailMessage;
+  final VoidCallback? onDetailTap;
 
   @override
   Widget build(BuildContext context) {
@@ -20,17 +22,18 @@ class TransferStatusCard extends StatelessWidget {
       theme.colorScheme,
     );
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Container(
-              width: 36,
-              height: 36,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: presentation.iconBackground,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(
                 presentation.icon,
@@ -47,22 +50,29 @@ class TransferStatusCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                      height: 1.25,
                     ),
                   ),
                   if (detailMessage != null &&
-                      detailMessage!.trim().isNotEmpty &&
-                      (status == TransferStatus.error ||
-                          status == TransferStatus.receiverDeclined)) ...<Widget>[
-                    const SizedBox(height: 6),
-                    Text(
-                      detailMessage!.trim(),
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: status == TransferStatus.error
-                            ? theme.colorScheme.error
-                            : theme.colorScheme.onSurfaceVariant,
+                      detailMessage!.trim().isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: onDetailTap,
+                      behavior: HitTestBehavior.opaque,
+                      child: Text(
+                        detailMessage!.trim(),
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: switch (status) {
+                            TransferStatus.error => theme.colorScheme.error,
+                            TransferStatus.receiverDeclined =>
+                              theme.colorScheme.onSurfaceVariant,
+                            _ => theme.colorScheme.onSurfaceVariant,
+                          },
+                        ),
                       ),
                     ),
                   ],

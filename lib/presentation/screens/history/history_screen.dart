@@ -2,6 +2,7 @@ import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 import '../../../domain/entities/transfer_entity.dart';
 import '../../../domain/entities/transfer_lifecycle_signal.dart';
@@ -13,6 +14,7 @@ import '../../bloc/profile/profile_state.dart';
 import '../../bloc/transfer/transfer_bloc.dart';
 import '../../bloc/transfer/transfer_state.dart';
 import '../../widgets/history_transfer_card.dart';
+import '../../widgets/tranzo_skeleton.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -22,6 +24,9 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
+  DateTime _lastLoadMoreRequestAt = DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration _loadMoreThrottle = Duration(milliseconds: 350);
+
   @override
   void initState() {
     super.initState();
@@ -69,104 +74,147 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF0F2FA),
-      body: BlocListener<ProfileBloc, ProfileState>(
-        listenWhen: (ProfileState previous, ProfileState current) {
-          return previous.user?.id != current.user?.id &&
-              current.user?.id != null;
-        },
-        listener: (BuildContext context, ProfileState _) {
-          _loadIfReady();
-        },
-        child: BlocListener<TransferBloc, TransferState>(
-          listenWhen: (TransferState previous, TransferState current) {
-            for (final MapEntry<String, TransferLifecycleSignalEntity> entry
-                in current.lifecycleSignalsByTransferId.entries) {
-              final TransferLifecycleSignalEntity? prior =
-                  previous.lifecycleSignalsByTransferId[entry.key];
-              if (prior?.event == entry.value.event) {
-                continue;
+      body: MultiBlocListener(
+        listeners: <BlocListener<dynamic, dynamic>>[
+          BlocListener<ProfileBloc, ProfileState>(
+            listenWhen: (ProfileState previous, ProfileState current) {
+              return previous.user?.id != current.user?.id &&
+                  current.user?.id != null;
+            },
+            listener: (BuildContext context, ProfileState _) {
+              _loadIfReady();
+            },
+          ),
+          BlocListener<TransferBloc, TransferState>(
+            listenWhen: (TransferState previous, TransferState current) {
+              for (final MapEntry<String, TransferLifecycleSignalEntity> entry
+                  in current.lifecycleSignalsByTransferId.entries) {
+                final TransferLifecycleSignalEntity? prior =
+                    previous.lifecycleSignalsByTransferId[entry.key];
+                if (prior?.event == entry.value.event) {
+                  continue;
+                }
+                switch (entry.value.event) {
+                  case TransferLifecycleEventType.transferCompleted:
+                  case TransferLifecycleEventType.transferFailed:
+                  case TransferLifecycleEventType.transferRejected:
+                    return true;
+                  case TransferLifecycleEventType.transferStarted:
+                  case TransferLifecycleEventType.transferAccepted:
+                    break;
+                }
               }
-              switch (entry.value.event) {
-                case TransferLifecycleEventType.transferCompleted:
-                case TransferLifecycleEventType.transferFailed:
-                case TransferLifecycleEventType.transferRejected:
-                  return true;
-                case TransferLifecycleEventType.transferStarted:
-                case TransferLifecycleEventType.transferAccepted:
-                  break;
+              return false;
+            },
+            listener: (BuildContext context, TransferState _) {
+              final String? userId = context.read<ProfileBloc>().state.user?.id;
+              if (userId != null) {
+                context.read<HistoryBloc>().add(LoadHistory(userId));
               }
-            }
-            return false;
-          },
-          listener: (BuildContext context, TransferState _) {
-            final String? userId =
-                context.read<ProfileBloc>().state.user?.id;
-            if (userId != null) {
-              context.read<HistoryBloc>().add(LoadHistory(userId));
-            }
-          },
-          child: BlocBuilder<HistoryBloc, HistoryState>(
-            builder: (BuildContext context, HistoryState state) {
+            },
+          ),
+          BlocListener<HistoryBloc, HistoryState>(
+            listenWhen: (HistoryState previous, HistoryState current) {
+              return previous.errorMessage != current.errorMessage &&
+                  current.status == HistoryStatus.error &&
+                  current.errorMessage != null;
+            },
+            listener: (BuildContext context, HistoryState state) {
+              final String? message = state.errorMessage;
+              if (message == null) {
+                return;
+              }
+              ScaffoldMessenger.of(context)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(SnackBar(content: Text(message)));
+            },
+          ),
+        ],
+        child: BlocBuilder<HistoryBloc, HistoryState>(
+          builder: (BuildContext context, HistoryState state) {
+              final bool showInitialSkeleton =
+                  state.status == HistoryStatus.initial ||
+                  (state.status == HistoryStatus.loading &&
+                      state.allItems.isEmpty &&
+                      state.items.isEmpty);
               return RefreshIndicator(
-              color: theme.colorScheme.primary,
-              onRefresh: () => _onRefresh(context),
-              child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: <Widget>[
-                  SliverToBoxAdapter(
-                    child: _HistoryHeroHeader(
-                      theme: theme,
-                      historyState: state,
-                      currentUserId: currentUserId,
-                      onRefreshTap: () => _onRefresh(context),
-                    ),
+                color: theme.colorScheme.primary,
+                onRefresh: () => _onRefresh(context),
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (ScrollNotification notification) {
+                    if (notification is ScrollUpdateNotification &&
+                        notification.metrics.extentAfter <= 360) {
+                      final DateTime now = DateTime.now();
+                      if (now.difference(_lastLoadMoreRequestAt) >=
+                          _loadMoreThrottle) {
+                        _lastLoadMoreRequestAt = now;
+                        context.read<HistoryBloc>().add(const LoadMoreHistory());
+                      }
+                    }
+                    return false;
+                  },
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: <Widget>[
+                      SliverToBoxAdapter(
+                        child: _HistoryHeroHeader(
+                          theme: theme,
+                          historyState: state,
+                          currentUserId: currentUserId,
+                          statsLoading:
+                              currentUserId != null && showInitialSkeleton,
+                          onRefreshTap: () => _onRefresh(context),
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            horizontalPadding,
+                            0,
+                            horizontalPadding,
+                            12,
+                          ),
+                          child: _FilterStrip(
+                            selected: state.filterType,
+                            onChanged: (HistoryFilterType next) {
+                              context.read<HistoryBloc>().add(
+                                FilterChanged(next),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      if (currentUserId == null)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: _EmptyIllustration(
+                            icon: Icons.person_outline_rounded,
+                            title: 'Almost there',
+                            subtitle:
+                                'Your profile is still loading. Pull to refresh '
+                                'in a moment.',
+                            colors: <Color>[
+                              theme.colorScheme.primary.withValues(alpha: 0.12),
+                              theme.colorScheme.tertiary.withValues(alpha: 0.12),
+                            ],
+                          ),
+                        )
+                      else
+                        ..._buildHistoryBodySlivers(
+                          context: context,
+                          theme: theme,
+                          state: state,
+                          currentUserId: currentUserId,
+                          horizontalPadding: horizontalPadding,
+                          showInitialSkeleton: showInitialSkeleton,
+                        ),
+                    ],
                   ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        horizontalPadding,
-                        0,
-                        horizontalPadding,
-                        12,
-                      ),
-                      child: _FilterStrip(
-                        selected: state.filterType,
-                        onChanged: (HistoryFilterType next) {
-                          context.read<HistoryBloc>().add(FilterChanged(next));
-                        },
-                      ),
-                    ),
-                  ),
-                  if (currentUserId == null)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: _EmptyIllustration(
-                        icon: Icons.person_outline_rounded,
-                        title: 'Almost there',
-                        subtitle:
-                            'Your profile is still loading. Pull to refresh '
-                            'in a moment.',
-                        colors: <Color>[
-                          theme.colorScheme.primary.withValues(alpha: 0.12),
-                          theme.colorScheme.tertiary.withValues(alpha: 0.12),
-                        ],
-                      ),
-                    )
-                  else
-                    ..._buildHistoryBodySlivers(
-                      context: context,
-                      theme: theme,
-                      state: state,
-                      currentUserId: currentUserId,
-                      horizontalPadding: horizontalPadding,
-                    ),
-                ],
-              ),
-            );
+                ),
+              );
           },
         ),
       ),
-    ),
     );
   }
 
@@ -176,53 +224,43 @@ class _HistoryScreenState extends State<HistoryScreen> {
     required HistoryState state,
     required String currentUserId,
     required double horizontalPadding,
+    required bool showInitialSkeleton,
   }) {
     switch (state.status) {
       case HistoryStatus.initial:
       case HistoryStatus.loading:
-        return <Widget>[
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Syncing your activity…',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Hang tight — we are pulling your transfers.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ];
+        if (!showInitialSkeleton && state.items.isNotEmpty) {
+          return _buildLoadedSlivers(
+            context: context,
+            theme: theme,
+            state: state,
+            currentUserId: currentUserId,
+            horizontalPadding: horizontalPadding,
+          );
+        }
+        return _historyLoadingSlivers(
+          context: context,
+          theme: theme,
+          horizontalPadding: horizontalPadding,
+        );
       case HistoryStatus.error:
+        if (state.allItems.isNotEmpty) {
+          return _buildLoadedSlivers(
+            context: context,
+            theme: theme,
+            state: state,
+            currentUserId: currentUserId,
+            horizontalPadding: horizontalPadding,
+          );
+        }
         return <Widget>[
           SliverFillRemaining(
             hasScrollBody: false,
             child: _EmptyIllustration(
-              icon: Icons.cloud_off_rounded,
-              title: 'Could not refresh',
-              subtitle:
-                  state.errorMessage ?? 'Check your connection and try again.',
-              colors: const <Color>[Color(0xFFFFEBEE), Color(0xFFFFF3E0)],
+              icon: Icons.inbox_rounded,
+              title: 'No transfers to show',
+              subtitle: 'Pull down or tap retry to refresh your history.',
+              colors: const <Color>[Color(0xFFE8EAF6), Color(0xFFE0F2FE)],
               action: FilledButton.icon(
                 onPressed: () {
                   context.read<HistoryBloc>().add(LoadHistory(currentUserId));
@@ -254,81 +292,269 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
         ];
       case HistoryStatus.loaded:
-        final List<_DaySection> sections = _groupByCalendarDay(
-          context,
-          state.items,
+        return _buildLoadedSlivers(
+          context: context,
+          theme: theme,
+          state: state,
+          currentUserId: currentUserId,
+          horizontalPadding: horizontalPadding,
         );
-        if (sections.isEmpty) {
-          return <Widget>[
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: _EmptyIllustration(
-                icon: Icons.inbox_rounded,
-                title: 'Nothing to show',
-                subtitle: 'No items match this filter.',
-                colors: const <Color>[Color(0xFFEDE9FE), Color(0xFFE0E7FF)],
-              ),
+    }
+  }
+
+  List<Widget> _buildLoadedSlivers({
+    required BuildContext context,
+    required ThemeData theme,
+    required HistoryState state,
+    required String currentUserId,
+    required double horizontalPadding,
+  }) {
+    final List<_DaySection> sections = _groupByCalendarDay(context, state.items);
+    if (sections.isEmpty) {
+      return <Widget>[
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: _EmptyIllustration(
+            icon: Icons.inbox_rounded,
+            title: 'Nothing to show',
+            subtitle: 'No items match this filter.',
+            colors: const <Color>[Color(0xFFEDE9FE), Color(0xFFE0E7FF)],
+          ),
+        ),
+      ];
+    }
+    final List<Widget> out = <Widget>[];
+    for (final _DaySection section in sections) {
+      out.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: 4,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(4),
+                    gradient: LinearGradient(
+                      colors: <Color>[
+                        theme.colorScheme.primary,
+                        theme.colorScheme.tertiary,
+                      ],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  section.title,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
-          ];
-        }
-        final List<Widget> out = <Widget>[];
-        for (final _DaySection section in sections) {
-          out.add(
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-                child: Row(
-                  children: <Widget>[
-                    Container(
-                      width: 4,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(4),
-                        gradient: LinearGradient(
-                          colors: <Color>[
-                            theme.colorScheme.primary,
-                            theme.colorScheme.tertiary,
-                          ],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                        ),
+          ),
+        ),
+      );
+      out.add(
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate((BuildContext context, int index) {
+              final TransferEntity t = section.items[index];
+              return HistoryTransferCard(
+                transfer: t,
+                currentUserId: currentUserId,
+              );
+            }, childCount: section.items.length),
+          ),
+        ),
+      );
+    }
+    if (state.hasMore || state.isLoadingMore) {
+      out.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 24),
+            child: Center(
+              child: state.isLoadingMore
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    )
+                  : Text(
+                      'Scroll for more',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(width: 10),
+            ),
+          ),
+        ),
+      );
+    } else {
+      out.add(const SliverToBoxAdapter(child: SizedBox(height: 24)));
+    }
+    return out;
+  }
+}
+
+List<Widget> _historyLoadingSlivers({
+  required BuildContext context,
+  required ThemeData theme,
+  required double horizontalPadding,
+}) {
+  final PaintingEffect effect = TranzoSkeleton.effectOf(context);
+  return <Widget>[
+    SliverToBoxAdapter(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          horizontalPadding,
+          0,
+          horizontalPadding,
+          8,
+        ),
+        child: Skeletonizer(
+          enabled: true,
+          effect: effect,
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 4,
+                height: 18,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  color: theme.colorScheme.primary.withValues(alpha: 0.35),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Today',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+    Skeletonizer.sliver(
+      enabled: true,
+      effect: effect,
+      child: SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (BuildContext context, int index) =>
+                const _HistoryTransferSkeletonCard(),
+            childCount: 7,
+          ),
+        ),
+      ),
+    ),
+    const SliverToBoxAdapter(child: SizedBox(height: 24)),
+  ];
+}
+
+class _HistoryTransferSkeletonCard extends StatelessWidget {
+  const _HistoryTransferSkeletonCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: const Color(0xFFE9EAF2)),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: scheme.primary.withValues(alpha: 0.06),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: LinearGradient(
+                    colors: <Color>[
+                      scheme.primary.withValues(alpha: 0.35),
+                      scheme.tertiary.withValues(alpha: 0.35),
+                    ],
+                  ),
+                ),
+                child: const Icon(Icons.insert_drive_file_rounded, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
                     Text(
-                      section.title,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.6,
-                        color: theme.colorScheme.onSurfaceVariant,
+                      'Quarterly-report-final-v2.pdf',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
+                        height: 1.25,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: <Widget>[
+                        Text(
+                          '12.4 MB',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          '2h ago',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-            ),
-          );
-          out.add(
-            SliverPadding(
-              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate((
-                  BuildContext context,
-                  int index,
-                ) {
-                  final TransferEntity t = section.items[index];
-                  return HistoryTransferCard(
-                    transfer: t,
-                    currentUserId: currentUserId,
-                  );
-                }, childCount: section.items.length),
+              const SizedBox(width: 8),
+              Text(
+                'Done',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-          );
-        }
-        out.add(const SliverToBoxAdapter(child: SizedBox(height: 24)));
-        return out;
-    }
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -393,29 +619,113 @@ class _HistoryHeroHeader extends StatelessWidget {
     required this.theme,
     required this.historyState,
     required this.currentUserId,
+    required this.statsLoading,
     required this.onRefreshTap,
   });
 
   final ThemeData theme;
   final HistoryState historyState;
   final String? currentUserId;
+  final bool statsLoading;
   final Future<void> Function() onRefreshTap;
 
   @override
   Widget build(BuildContext context) {
-    final int total = historyState.allItems.length;
-    int sent = 0;
-    int received = 0;
-    if (currentUserId != null) {
-      for (final TransferEntity t in historyState.allItems) {
-        if (t.senderId == currentUserId) {
-          sent++;
-        }
-        if (t.receiverId == currentUserId) {
-          received++;
+    final int total;
+    final int sent;
+    final int received;
+    if (statsLoading) {
+      total = 24;
+      sent = 14;
+      received = 10;
+    } else {
+      total = historyState.allItems.length;
+      int s = 0;
+      int r = 0;
+      if (currentUserId != null) {
+        for (final TransferEntity t in historyState.allItems) {
+          if (t.senderId == currentUserId) {
+            s++;
+          }
+          if (t.receiverId == currentUserId) {
+            r++;
+          }
         }
       }
+      sent = s;
+      received = r;
     }
+
+    final Widget statsSection = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool compact = constraints.maxWidth < 360;
+        if (compact) {
+          return Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: <Widget>[
+              SizedBox(
+                width: (constraints.maxWidth - 10) / 2,
+                child: _StatTile(
+                  icon: Icons.layers_rounded,
+                  label: 'Total',
+                  value: total.toString(),
+                  surface: Colors.white.withValues(alpha: 0.16),
+                ),
+              ),
+              SizedBox(
+                width: (constraints.maxWidth - 10) / 2,
+                child: _StatTile(
+                  icon: Icons.upload_rounded,
+                  label: 'Sent',
+                  value: sent.toString(),
+                  surface: Colors.white.withValues(alpha: 0.16),
+                ),
+              ),
+              SizedBox(
+                width: (constraints.maxWidth - 10) / 2,
+                child: _StatTile(
+                  icon: Icons.download_rounded,
+                  label: 'Received',
+                  value: received.toString(),
+                  surface: Colors.white.withValues(alpha: 0.16),
+                ),
+              ),
+            ],
+          );
+        }
+        return Row(
+          children: <Widget>[
+            Expanded(
+              child: _StatTile(
+                icon: Icons.layers_rounded,
+                label: 'Total',
+                value: total.toString(),
+                surface: Colors.white.withValues(alpha: 0.16),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _StatTile(
+                icon: Icons.upload_rounded,
+                label: 'Sent',
+                value: sent.toString(),
+                surface: Colors.white.withValues(alpha: 0.16),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _StatTile(
+                icon: Icons.download_rounded,
+                label: 'Received',
+                value: received.toString(),
+                surface: Colors.white.withValues(alpha: 0.16),
+              ),
+            ),
+          ],
+        );
+      },
+    );
 
     return Container(
       width: double.infinity,
@@ -482,75 +792,11 @@ class _HistoryHeroHeader extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 22),
-              LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final bool compact = constraints.maxWidth < 360;
-                  if (compact) {
-                    return Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: <Widget>[
-                        SizedBox(
-                          width: (constraints.maxWidth - 10) / 2,
-                          child: _StatTile(
-                            icon: Icons.layers_rounded,
-                            label: 'Total',
-                            value: total.toString(),
-                            surface: Colors.white.withValues(alpha: 0.16),
-                          ),
-                        ),
-                        SizedBox(
-                          width: (constraints.maxWidth - 10) / 2,
-                          child: _StatTile(
-                            icon: Icons.upload_rounded,
-                            label: 'Sent',
-                            value: sent.toString(),
-                            surface: Colors.white.withValues(alpha: 0.16),
-                          ),
-                        ),
-                        SizedBox(
-                          width: (constraints.maxWidth - 10) / 2,
-                          child: _StatTile(
-                            icon: Icons.download_rounded,
-                            label: 'Received',
-                            value: received.toString(),
-                            surface: Colors.white.withValues(alpha: 0.16),
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-                  return Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: _StatTile(
-                          icon: Icons.layers_rounded,
-                          label: 'Total',
-                          value: total.toString(),
-                          surface: Colors.white.withValues(alpha: 0.16),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _StatTile(
-                          icon: Icons.upload_rounded,
-                          label: 'Sent',
-                          value: sent.toString(),
-                          surface: Colors.white.withValues(alpha: 0.16),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _StatTile(
-                          icon: Icons.download_rounded,
-                          label: 'Received',
-                          value: received.toString(),
-                          surface: Colors.white.withValues(alpha: 0.16),
-                        ),
-                      ),
-                    ],
-                  );
-                },
+              Skeletonizer(
+                enabled: statsLoading,
+                effect: TranzoSkeleton.effectOf(context),
+                containersColor: Colors.white.withValues(alpha: 0.12),
+                child: statsSection,
               ),
             ],
           ),
