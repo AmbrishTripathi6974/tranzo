@@ -1097,7 +1097,31 @@ class TransferRepositoryImpl implements TransferRepository {
       }
     }
 
-    final List<TransferEntity> out = merged.values.toList()
+    final Map<String, String> shortCodeByUserId = await _loadShortCodeByUserId();
+    final List<TransferEntity> out = merged.values
+        .map(
+          (TransferEntity transfer) => TransferEntity(
+            id: transfer.id,
+            senderId: transfer.senderId,
+            receiverId: transfer.receiverId,
+            status: transfer.status,
+            createdAt: transfer.createdAt,
+            fileName: transfer.fileName,
+            fileSize: transfer.fileSize,
+            senderUsername: _resolveParticipantLabel(
+              shortCode: shortCodeByUserId[transfer.senderId],
+              fallbackLabel: transfer.senderUsername,
+              userId: transfer.senderId,
+            ),
+            receiverUsername: _resolveParticipantLabel(
+              shortCode: shortCodeByUserId[transfer.receiverId],
+              fallbackLabel: transfer.receiverUsername,
+              userId: transfer.receiverId,
+            ),
+            expiresAt: transfer.expiresAt,
+          ),
+        )
+        .toList()
       ..sort(
         (TransferEntity a, TransferEntity b) =>
             b.createdAt.compareTo(a.createdAt),
@@ -1110,14 +1134,7 @@ class TransferRepositoryImpl implements TransferRepository {
     String userId,
   ) async {
     final List<TransferEntity> history = await getTransferHistory(userId);
-    final List<UserCollection> cachedUsers = await _isar.userCollections
-        .where()
-        .findAll();
-    final Map<String, String> emailByUserId = <String, String>{
-      for (final UserCollection user in cachedUsers)
-        if (user.email != null && user.email!.trim().isNotEmpty)
-          user.supabaseUserId: user.email!.trim(),
-    };
+    final Map<String, String> shortCodeByUserId = await _loadShortCodeByUserId();
     final Map<String, ProfileInteractionEntity> interactionsByUserId =
         <String, ProfileInteractionEntity>{};
 
@@ -1126,17 +1143,15 @@ class TransferRepositoryImpl implements TransferRepository {
       final String counterpartId = isSender
           ? transfer.receiverId
           : transfer.senderId;
-      final String? counterpartEmail = emailByUserId[counterpartId];
+      final String? counterpartCode = shortCodeByUserId[counterpartId];
       final String? transferSideName = isSender
           ? transfer.receiverUsername?.trim()
           : transfer.senderUsername?.trim();
-      final bool hasEmailLikeName =
-          transferSideName != null &&
-          transferSideName.isNotEmpty &&
-          transferSideName.contains('@');
-      final String counterpartLabel =
-          counterpartEmail ??
-          (hasEmailLikeName ? transferSideName : 'Email unavailable');
+      final String counterpartLabel = _resolveParticipantLabel(
+        shortCode: counterpartCode,
+        fallbackLabel: transferSideName,
+        userId: counterpartId,
+      );
 
       final ProfileInteractionEntity? existing =
           interactionsByUserId[counterpartId];
@@ -1156,6 +1171,40 @@ class TransferRepositoryImpl implements TransferRepository {
               b.lastInteractionDate.compareTo(a.lastInteractionDate),
         );
     return unique;
+  }
+
+  Future<Map<String, String>> _loadShortCodeByUserId() async {
+    final List<UserCollection> cachedUsers = await _isar.userCollections
+        .where()
+        .findAll();
+    return <String, String>{
+      for (final UserCollection user in cachedUsers)
+        if (user.shortCode != null && user.shortCode!.trim().isNotEmpty)
+          user.supabaseUserId: user.shortCode!.trim().toUpperCase(),
+    };
+  }
+
+  String _resolveParticipantLabel({
+    required String? shortCode,
+    required String? fallbackLabel,
+    required String userId,
+  }) {
+    final String? normalizedCode = shortCode?.trim();
+    if (normalizedCode != null && normalizedCode.isNotEmpty) {
+      return normalizedCode;
+    }
+    final String? normalizedFallback = fallbackLabel?.trim();
+    if (normalizedFallback != null && normalizedFallback.isNotEmpty) {
+      return normalizedFallback;
+    }
+    return _shortUserId(userId);
+  }
+
+  String _shortUserId(String id) {
+    if (id.length <= 10) {
+      return id;
+    }
+    return '${id.substring(0, 4)}…${id.substring(id.length - 4)}';
   }
 
   @override
