@@ -1130,13 +1130,13 @@ class TransferRepositoryImpl implements TransferRepository {
       final String? transferSideName = isSender
           ? transfer.receiverUsername?.trim()
           : transfer.senderUsername?.trim();
-      final bool hasUsableName =
+      final bool hasEmailLikeName =
           transferSideName != null &&
           transferSideName.isNotEmpty &&
-          transferSideName.toLowerCase() != 'user';
+          transferSideName.contains('@');
       final String counterpartLabel =
           counterpartEmail ??
-          (hasUsableName ? transferSideName : counterpartId);
+          (hasEmailLikeName ? transferSideName : 'Email unavailable');
 
       final ProfileInteractionEntity? existing =
           interactionsByUserId[counterpartId];

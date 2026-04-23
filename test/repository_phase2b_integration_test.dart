@@ -276,8 +276,8 @@ Future<void> main() async {
               ),
             ];
 
-        final Stream<TransferLifecycleSignalEntity> signals =
-            repository.listenTransferSignals(userId: 'sender-1');
+        final Stream<TransferLifecycleSignalEntity> signals = repository
+            .listenTransferSignals(userId: 'sender-1');
         await Future<void>.delayed(const Duration(milliseconds: 15));
         transferService.participantRowsByUser['sender-1'] =
             <TransferSessionRecord>[
@@ -292,8 +292,7 @@ Future<void> main() async {
               ),
             ];
 
-        final TransferLifecycleSignalEntity signal = await signals
-            .first
+        final TransferLifecycleSignalEntity signal = await signals.first
             .timeout(const Duration(seconds: 2));
         expect(signal.transferId, 't-signal-1');
         expect(signal.event, TransferLifecycleEventType.transferCompleted);
@@ -429,9 +428,9 @@ class _FakeTransferService implements TransferService {
     required String senderId,
     required String transferUuid,
     required int chunkIndex,
-    int expiresInSeconds = TransferService.transfersV2SignedUrlDefaultExpirySeconds,
-  }) async =>
-      'https://example.invalid/signed';
+    int expiresInSeconds =
+        TransferService.transfersV2SignedUrlDefaultExpirySeconds,
+  }) async => 'https://example.invalid/signed';
 
   @override
   Future<void> rpcReportChunkUploaded({

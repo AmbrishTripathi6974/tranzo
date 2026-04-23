@@ -481,7 +481,9 @@ class TransferService {
       chunkIndex: chunkIndex,
     );
     try {
-      await _client.storage.from(_chunksBucket).uploadBinary(
+      await _client.storage
+          .from(_chunksBucket)
+          .uploadBinary(
             objectPath,
             Uint8List.fromList(chunkBytes),
             fileOptions: const FileOptions(upsert: true),
@@ -497,7 +499,9 @@ class TransferService {
       );
       if (_isRlsViolation(e.message) && await _tryRefreshSession()) {
         try {
-          await _client.storage.from(_chunksBucket).uploadBinary(
+          await _client.storage
+              .from(_chunksBucket)
+              .uploadBinary(
                 objectPath,
                 Uint8List.fromList(chunkBytes),
                 fileOptions: const FileOptions(upsert: true),
@@ -552,17 +556,15 @@ class TransferService {
       chunkIndex: chunkIndex,
     );
     try {
-      return await _client.storage.from(_chunksBucket).createSignedUrl(
-        objectPath,
-        expiresInSeconds,
-      );
+      return await _client.storage
+          .from(_chunksBucket)
+          .createSignedUrl(objectPath, expiresInSeconds);
     } on StorageException catch (e) {
       if (_isRlsViolation(e.message) && await _tryRefreshSession()) {
         try {
-          return await _client.storage.from(_chunksBucket).createSignedUrl(
-            objectPath,
-            expiresInSeconds,
-          );
+          return await _client.storage
+              .from(_chunksBucket)
+              .createSignedUrl(objectPath, expiresInSeconds);
         } on StorageException catch (retryError) {
           throw _mapStorageException(
             retryError,
