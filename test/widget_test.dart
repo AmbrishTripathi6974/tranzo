@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:tranzo/core/network/network_info.dart';
 import 'package:tranzo/core/services/permission_service.dart';
+import 'package:tranzo/di/injection_container.dart';
 import 'package:tranzo/domain/entities/file_entity.dart';
 import 'package:tranzo/domain/entities/incoming_transfer_offer.dart';
 import 'package:tranzo/domain/entities/profile_interaction_entity.dart';
@@ -37,6 +38,19 @@ import 'package:tranzo/presentation/bloc/transfer/transfer_event.dart';
 import 'package:tranzo/presentation/pages/transfer_home_page.dart';
 
 void main() {
+  setUp(() {
+    if (sl.isRegistered<NetworkInfo>()) {
+      sl.unregister<NetworkInfo>();
+    }
+    sl.registerLazySingleton<NetworkInfo>(_FakeNetworkInfo.new);
+  });
+
+  tearDown(() {
+    if (sl.isRegistered<NetworkInfo>()) {
+      sl.unregister<NetworkInfo>();
+    }
+  });
+
   testWidgets('Transfer home scaffold renders', (WidgetTester tester) async {
     final _FakeTransferRepository repository = _FakeTransferRepository();
     final _FakeAuthRepository authRepository = _FakeAuthRepository();
