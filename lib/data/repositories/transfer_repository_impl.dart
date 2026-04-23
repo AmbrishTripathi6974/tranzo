@@ -386,6 +386,14 @@ class TransferRepositoryImpl implements TransferRepository {
           final List<TransferSessionRecord> rows = await _transferService
               .getIncomingTransfers(receiverId);
           for (final TransferSessionRecord row in rows) {
+            final String legacyStatus =
+                (row.row['status'] as String? ?? '').trim().toLowerCase();
+            if (legacyStatus == 'completed' ||
+                legacyStatus == 'cancelled' ||
+                legacyStatus == 'canceled' ||
+                legacyStatus == 'failed') {
+              continue;
+            }
             final IncomingTransferOffer? parsed =
                 await _mapRecordToIncomingOffer(row);
             if (parsed != null) {

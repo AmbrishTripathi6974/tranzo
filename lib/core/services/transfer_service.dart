@@ -170,6 +170,13 @@ class TransferService {
           .from(_transferSessionsTable)
           .select()
           .eq('receiver_id', receiverId)
+          .inFilter('status', <String>[
+            'pending',
+            'queued',
+            'uploading',
+            'uploaded',
+            'downloading',
+          ])
           .order('created_at', ascending: false);
       return rows
           .map(

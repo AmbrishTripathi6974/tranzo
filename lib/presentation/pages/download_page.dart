@@ -115,7 +115,7 @@ class _DownloadPageState extends State<DownloadPage> {
                             ),
                             const SizedBox(height: 10),
                             Text(
-                              'From ${_shortId(transfer.senderId)}',
+                              'From sender UID: ${_shortId(transfer.senderId)}',
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                             const SizedBox(height: 6),

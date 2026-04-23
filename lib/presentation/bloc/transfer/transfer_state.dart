@@ -10,6 +10,7 @@ enum TransferStatus {
   loading,
   success,
   error,
+
   /// Receiver cancelled or declined; not a sender-side failure.
   receiverDeclined,
 }
@@ -54,6 +55,7 @@ class TransferState extends Equatable {
     this.uploadDraftPickerBusy = false,
     this.uploadDraftSelectionNotice,
     this.uploadRecipientCodeDraft = '',
+    this.storageRefreshTick = 0,
   });
 
   final TransferStatus status;
@@ -71,6 +73,7 @@ class TransferState extends Equatable {
   final bool uploadDraftPickerBusy;
   final String? uploadDraftSelectionNotice;
   final String uploadRecipientCodeDraft;
+  final int storageRefreshTick;
 
   TransferState copyWith({
     TransferStatus? status,
@@ -88,6 +91,7 @@ class TransferState extends Equatable {
     bool? uploadDraftPickerBusy,
     String? uploadDraftSelectionNotice,
     String? uploadRecipientCodeDraft,
+    int? storageRefreshTick,
     bool clearActiveTransferId = false,
     bool clearErrorMessage = false,
     bool clearBatchProgress = false,
@@ -128,6 +132,7 @@ class TransferState extends Equatable {
           : (uploadDraftSelectionNotice ?? this.uploadDraftSelectionNotice),
       uploadRecipientCodeDraft:
           uploadRecipientCodeDraft ?? this.uploadRecipientCodeDraft,
+      storageRefreshTick: storageRefreshTick ?? this.storageRefreshTick,
     );
   }
 
@@ -148,5 +153,6 @@ class TransferState extends Equatable {
     uploadDraftPickerBusy,
     uploadDraftSelectionNotice,
     uploadRecipientCodeDraft,
+    storageRefreshTick,
   ];
 }

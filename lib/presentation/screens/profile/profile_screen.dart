@@ -9,6 +9,8 @@ import '../../bloc/auth/auth_state.dart';
 import '../../bloc/profile/profile_bloc.dart';
 import '../../bloc/profile/profile_event.dart';
 import '../../bloc/profile/profile_state.dart';
+import '../../bloc/transfer/transfer_bloc.dart';
+import '../../bloc/transfer/transfer_state.dart';
 import '../../widgets/tranzo_skeleton.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -20,7 +22,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _didAutoRetryFromError = false;
-  late final Future<LocalStorageSnapshot?> _storageSnapshotFuture;
+  late Future<LocalStorageSnapshot?> _storageSnapshotFuture;
 
   @override
   void initState() {
@@ -31,6 +33,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<LocalStorageSnapshot?> _loadStorageSnapshot() {
     return sl<StorageService>().getLocalStorageSnapshot();
+  }
+
+  void _refreshStorageSnapshot() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _storageSnapshotFuture = _loadStorageSnapshot();
+    });
   }
 
   void _maybeRequestProfile() {
@@ -144,6 +155,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ScaffoldMessenger.of(context)
                 ..hideCurrentSnackBar()
                 ..showSnackBar(SnackBar(content: Text(message)));
+            },
+          ),
+          BlocListener<TransferBloc, TransferState>(
+            listenWhen: (TransferState previous, TransferState current) {
+              return previous.storageRefreshTick != current.storageRefreshTick;
+            },
+            listener: (BuildContext context, TransferState _) {
+              _refreshStorageSnapshot();
             },
           ),
         ],

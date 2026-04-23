@@ -557,13 +557,16 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
               .toList(growable: false),
           uiWarningMessage: mergedNotice,
           showInAppProgress: decision.showInAppProgress,
+          storageRefreshTick: state.storageRefreshTick + 1,
         ),
       );
     } catch (error) {
+      final String displayError = _toDisplayError(error);
       emit(
         state.copyWith(
           status: TransferStatus.error,
-          errorMessage: _toDisplayError(error),
+          errorMessage: displayError,
+          uiWarningMessage: displayError,
           clearActiveTransferId: true,
         ),
       );

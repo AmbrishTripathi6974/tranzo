@@ -98,10 +98,9 @@ class App extends StatelessWidget {
               },
             ),
             BlocListener<TransferBloc, TransferState>(
-              listenWhen:
-                  (TransferState previous, TransferState current) =>
-                      previous.uiWarningMessage != current.uiWarningMessage &&
-                      current.uiWarningMessage != null,
+              listenWhen: (TransferState previous, TransferState current) =>
+                  previous.uiWarningMessage != current.uiWarningMessage &&
+                  current.uiWarningMessage != null,
               listener: (BuildContext context, TransferState transferState) {
                 final String? message = transferState.uiWarningMessage;
                 if (message == null) {
@@ -110,7 +109,9 @@ class App extends StatelessWidget {
                 _messengerKey.currentState
                   ?..hideCurrentSnackBar()
                   ..showSnackBar(SnackBar(content: Text(message)));
-                context.read<TransferBloc>().add(const TransferUiEffectConsumed());
+                context.read<TransferBloc>().add(
+                  const TransferUiEffectConsumed(),
+                );
               },
             ),
           ],

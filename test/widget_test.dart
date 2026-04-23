@@ -13,8 +13,12 @@ import 'package:tranzo/domain/entities/transfer_entity.dart';
 import 'package:tranzo/domain/entities/transfer_lifecycle_signal.dart';
 import 'package:tranzo/domain/entities/transfer_task.dart';
 import 'package:tranzo/domain/entities/user_entity.dart';
+import 'package:tranzo/domain/repositories/auth_repository.dart';
 import 'package:tranzo/domain/repositories/mobile_data_large_upload_consent_repository.dart';
 import 'package:tranzo/domain/repositories/transfer_repository.dart';
+import 'package:tranzo/domain/usecases/get_current_user_usecase.dart';
+import 'package:tranzo/domain/usecases/get_transfer_history_usecase.dart';
+import 'package:tranzo/domain/usecases/get_user_interactions_usecase.dart';
 import 'package:tranzo/domain/usecases/retry_transfer_usecase.dart';
 import 'package:tranzo/domain/usecases/send_files_usecase.dart';
 import 'package:tranzo/domain/usecases/start_download_usecase.dart';
@@ -26,6 +30,8 @@ import 'package:tranzo/domain/usecases/evaluate_upload_policy_usecase.dart';
 import 'package:tranzo/domain/usecases/prepare_batch_upload_ui_usecase.dart';
 import 'package:tranzo/domain/usecases/prepare_incoming_transfer_usecase.dart';
 import 'package:tranzo/domain/usecases/validate_transfer_batch_usecase.dart';
+import 'package:tranzo/presentation/bloc/history/history_bloc.dart';
+import 'package:tranzo/presentation/bloc/profile/profile_bloc.dart';
 import 'package:tranzo/presentation/bloc/transfer/transfer_bloc.dart';
 import 'package:tranzo/presentation/bloc/transfer/transfer_event.dart';
 import 'package:tranzo/presentation/pages/transfer_home_page.dart';
@@ -33,6 +39,7 @@ import 'package:tranzo/presentation/pages/transfer_home_page.dart';
 void main() {
   testWidgets('Transfer home scaffold renders', (WidgetTester tester) async {
     final _FakeTransferRepository repository = _FakeTransferRepository();
+    final _FakeAuthRepository authRepository = _FakeAuthRepository();
     final _FakeMobileDataLargeUploadConsentRepository mobileDataConsent =
         _FakeMobileDataLargeUploadConsentRepository();
     final TransferBloc bloc = TransferBloc(
@@ -55,11 +62,22 @@ void main() {
       ),
       mobileDataLargeUploadConsent: mobileDataConsent,
     );
+    final ProfileBloc profileBloc = ProfileBloc(
+      getCurrentUser: GetCurrentUserUseCase(authRepository),
+      getUserInteractions: GetUserInteractions(repository),
+    );
+    final HistoryBloc historyBloc = HistoryBloc(
+      getTransferHistory: GetTransferHistoryUseCase(repository),
+    );
 
     await tester.pumpWidget(
       MaterialApp(
-        home: BlocProvider<TransferBloc>.value(
-          value: bloc,
+        home: MultiBlocProvider(
+          providers: <BlocProvider<dynamic>>[
+            BlocProvider<TransferBloc>.value(value: bloc),
+            BlocProvider<ProfileBloc>.value(value: profileBloc),
+            BlocProvider<HistoryBloc>.value(value: historyBloc),
+          ],
           child: const TransferHomePage(),
         ),
       ),
@@ -163,6 +181,27 @@ class _FakeMobileDataLargeUploadConsentRepository
   Future<void> setUserConsented(bool value) async {
     setUserConsentedCallCount++;
     _consented = value;
+  }
+}
+
+class _FakeAuthRepository implements AuthRepository {
+  @override
+  Future<UserEntity> getCurrentUser() async {
+    return const UserEntity(id: 'user_1', shortCode: 'USR1', username: 'User');
+  }
+
+  @override
+  Future<void> sendEmailOtp({required String email}) async {}
+
+  @override
+  Future<void> signOut() async {}
+
+  @override
+  Future<UserEntity> verifyEmailOtp({
+    required String email,
+    required String otpCode,
+  }) async {
+    return const UserEntity(id: 'user_1', shortCode: 'USR1', username: 'User');
   }
 }
 
