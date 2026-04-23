@@ -68,5 +68,9 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>Tranzo can save received photos and videos to your library when you download them.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Tranzo needs photo library access to save received images and videos.</string>
 	</dict>
 </plist>

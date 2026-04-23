@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:get_it/get_it.dart';
 import 'package:isar_community/isar.dart';
 
@@ -79,6 +80,15 @@ Future<void> configureDependencies() async {
   sl.registerLazySingleton<TransferService>(
     () => TransferService(sl<SupabaseClientHandle>().client),
   );
+  sl.registerLazySingleton<Dio>(
+    () => Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(minutes: 30),
+        sendTimeout: const Duration(minutes: 30),
+      ),
+    ),
+  );
   sl.registerLazySingleton<RealtimeService>(
     () => RealtimeService(sl<SupabaseClientHandle>().client),
   );
@@ -90,7 +100,10 @@ Future<void> configureDependencies() async {
 
   // Transfer data sources
   sl.registerLazySingleton<TransferRemoteDataSource>(
-    () => TransferRemoteDataSourceImpl(sl<TransferService>()),
+    () => TransferRemoteDataSourceImpl(
+      sl<TransferService>(),
+      sl<Dio>(),
+    ),
   );
   sl.registerLazySingleton<TransferLocalDataSource>(
     () => TransferLocalDataSourceImpl(sl<Isar>()),

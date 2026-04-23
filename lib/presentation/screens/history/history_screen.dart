@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../domain/entities/transfer_entity.dart';
+import '../../../domain/entities/transfer_lifecycle_signal.dart';
 import '../../bloc/history/history_bloc.dart';
 import '../../bloc/history/history_event.dart';
 import '../../bloc/history/history_state.dart';
 import '../../bloc/profile/profile_bloc.dart';
 import '../../bloc/profile/profile_state.dart';
+import '../../bloc/transfer/transfer_bloc.dart';
+import '../../bloc/transfer/transfer_state.dart';
 import '../../widgets/history_transfer_card.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -74,9 +77,37 @@ class _HistoryScreenState extends State<HistoryScreen> {
         listener: (BuildContext context, ProfileState _) {
           _loadIfReady();
         },
-        child: BlocBuilder<HistoryBloc, HistoryState>(
-          builder: (BuildContext context, HistoryState state) {
-            return RefreshIndicator(
+        child: BlocListener<TransferBloc, TransferState>(
+          listenWhen: (TransferState previous, TransferState current) {
+            for (final MapEntry<String, TransferLifecycleSignalEntity> entry
+                in current.lifecycleSignalsByTransferId.entries) {
+              final TransferLifecycleSignalEntity? prior =
+                  previous.lifecycleSignalsByTransferId[entry.key];
+              if (prior?.event == entry.value.event) {
+                continue;
+              }
+              switch (entry.value.event) {
+                case TransferLifecycleEventType.transferCompleted:
+                case TransferLifecycleEventType.transferFailed:
+                case TransferLifecycleEventType.transferRejected:
+                  return true;
+                case TransferLifecycleEventType.transferStarted:
+                case TransferLifecycleEventType.transferAccepted:
+                  break;
+              }
+            }
+            return false;
+          },
+          listener: (BuildContext context, TransferState _) {
+            final String? userId =
+                context.read<ProfileBloc>().state.user?.id;
+            if (userId != null) {
+              context.read<HistoryBloc>().add(LoadHistory(userId));
+            }
+          },
+          child: BlocBuilder<HistoryBloc, HistoryState>(
+            builder: (BuildContext context, HistoryState state) {
+              return RefreshIndicator(
               color: theme.colorScheme.primary,
               onRefresh: () => _onRefresh(context),
               child: CustomScrollView(
@@ -135,6 +166,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           },
         ),
       ),
+    ),
     );
   }
 

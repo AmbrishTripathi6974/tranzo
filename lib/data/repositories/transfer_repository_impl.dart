@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 import 'dart:developer' as developer;
@@ -26,8 +27,13 @@ import '../../core/services/realtime_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/services/transfer_service.dart';
 import '../../core/services/background_transfer_runtime_service.dart';
+import '../../core/services/received_file_save_location.dart';
+import '../../core/services/received_gallery_exporter.dart';
+import 'package:dio/dio.dart';
 import 'package:isar_community/isar.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 import '../../transfer_engine/download/download_manager.dart';
 import '../../transfer_engine/retry/retry_queue.dart';
 import '../../transfer_engine/chunking/chunk_manager.dart';
@@ -145,10 +151,19 @@ class TransferRepositoryImpl implements TransferRepository {
       TransferStatus.cancelled,
     );
     await _localDataSource.clearTransferProgress(transferId);
-    await _transferService.updateTransferStatus(
-      transferId: transferId,
-      status: TransferStatus.cancelled.name,
-    );
+    try {
+      await _transferService.updateTransfersV2Status(
+        transferUuid: transferId,
+        status: TransferStatus.cancelled.name,
+      );
+    } catch (_) {
+      try {
+        await _transferService.updateTransferStatus(
+          transferId: transferId,
+          status: TransferStatus.cancelled.name,
+        );
+      } catch (_) {}
+    }
     developer.log(
       'transfer_cancelled',
       name: 'transfer',
@@ -288,21 +303,53 @@ class TransferRepositoryImpl implements TransferRepository {
     final Set<String> seenIncomingKeys = <String>{};
     bool disposed = false;
     StreamSubscription<TransferLifecycleSignal>? realtimeSubscription;
+    StreamSubscription<Map<String, dynamic>>? transfersV2Subscription;
+
+    TransferStatus statusFromCloud(String? raw) {
+      switch ((raw ?? '').trim().toLowerCase()) {
+        case 'queued':
+          return TransferStatus.queued;
+        case 'uploading':
+          return TransferStatus.uploading;
+        case 'uploaded':
+          return TransferStatus.uploaded;
+        case 'downloading':
+          return TransferStatus.downloading;
+        case 'completed':
+          return TransferStatus.completed;
+        case 'failed':
+          return TransferStatus.failed;
+        case 'cancelled':
+          return TransferStatus.cancelled;
+        default:
+          return TransferStatus.pending;
+      }
+    }
 
     Future<void> emitIncoming(IncomingTransferOffer offer) async {
-      final String dedupeKey = '${offer.transferId}:${offer.fileId}';
-      if (!seenIncomingKeys.add(dedupeKey)) {
-        return;
-      }
       if (offer.trustStatus == SenderTrustStatus.blocked) {
         await _rejectBlockedIncoming(offer);
         return;
       }
-      final bool exists = await _localDataSource.fileExistsByFileId(
-        offer.fileId,
-      );
-      if (exists) {
-        return;
+      if (offer.usesTransfersV2) {
+        if (await _localTransferSuppressesIncomingV2(offer.transferId)) {
+          return;
+        }
+      } else {
+        final bool exists = await _localDataSource.fileExistsByFileId(
+          offer.fileId,
+        );
+        if (exists) {
+          return;
+        }
+      }
+      final String dedupeKey = '${offer.transferId}:${offer.fileId}';
+      if (!offer.usesTransfersV2) {
+        if (!seenIncomingKeys.add(dedupeKey)) {
+          return;
+        }
+      } else {
+        seenIncomingKeys.add(dedupeKey);
       }
       await _localDataSource.upsertIncomingTransfer(
         transferId: offer.transferId,
@@ -316,7 +363,9 @@ class TransferRepositoryImpl implements TransferRepository {
         fileHash: offer.fileHash,
         storagePath: offer.storagePath,
         createdAt: offer.createdAt,
-        status: TransferStatus.pending,
+        status: offer.usesTransfersV2
+            ? statusFromCloud(offer.cloudStatus)
+            : TransferStatus.pending,
       );
       if (!controller.isClosed) {
         controller.add(offer);
@@ -338,6 +387,19 @@ class TransferRepositoryImpl implements TransferRepository {
           for (final TransferSessionRecord row in rows) {
             final IncomingTransferOffer? parsed =
                 await _mapRecordToIncomingOffer(row);
+            if (parsed != null) {
+              await emitIncoming(parsed);
+            }
+          }
+          final List<TransfersV2Record> v2Rows = await _transferService
+              .getIncomingTransfersV2(receiverId);
+          for (final TransfersV2Record row in v2Rows) {
+            await _syncLocalTransferRowFromV2Remote(
+              row: row,
+              viewerUserId: receiverId,
+            );
+            final IncomingTransferOffer? parsed =
+                await _mapTransfersV2RecordToOffer(row);
             if (parsed != null) {
               await emitIncoming(parsed);
             }
@@ -374,9 +436,36 @@ class TransferRepositoryImpl implements TransferRepository {
       // Polling loop remains the fallback source of truth.
     }
 
+    try {
+      transfersV2Subscription = _realtimeService
+          .listenTransfersV2Postgres(userId: receiverId)
+          .listen((Map<String, dynamic> row) async {
+            try {
+              final TransfersV2Record record = TransfersV2Record.fromRow(row);
+              if (record.receiverId != receiverId) {
+                return;
+              }
+              await _syncLocalTransferRowFromV2Remote(
+                row: record,
+                viewerUserId: receiverId,
+              );
+              final IncomingTransferOffer? parsed =
+                  await _mapTransfersV2RecordToOffer(record);
+              if (parsed != null) {
+                await emitIncoming(parsed);
+              }
+            } catch (_) {
+              // Ignore malformed realtime payloads.
+            }
+          });
+    } catch (_) {
+      // Postgres Realtime is optional; polling still updates offers.
+    }
+
     controller.onCancel = () async {
       disposed = true;
       await realtimeSubscription?.cancel();
+      await transfersV2Subscription?.cancel();
     };
     return controller.stream;
   }
@@ -389,6 +478,7 @@ class TransferRepositoryImpl implements TransferRepository {
         StreamController<TransferLifecycleSignalEntity>();
     final Map<String, String> polledStatusByTransferId = <String, String>{};
     final Set<String> emittedEventKeys = <String>{};
+    bool signalsBaselineLoaded = false;
     bool disposed = false;
     StreamSubscription<TransferLifecycleSignal>? realtimeSubscription;
 
@@ -425,6 +515,9 @@ class TransferRepositoryImpl implements TransferRepository {
             final String? previousStatus =
                 polledStatusByTransferId[row.transferId];
             polledStatusByTransferId[row.transferId] = status;
+            if (!signalsBaselineLoaded) {
+              continue;
+            }
             if (previousStatus == status) {
               continue;
             }
@@ -444,6 +537,48 @@ class TransferRepositoryImpl implements TransferRepository {
               ),
             );
           }
+          final List<TransfersV2Record> v2Rows = await _transferService
+              .getParticipantTransfersV2(userId);
+          for (final TransfersV2Record row in v2Rows) {
+            await _syncLocalTransferRowFromV2Remote(
+              row: row,
+              viewerUserId: userId,
+            );
+            final String status = row.status.trim().toLowerCase();
+            if (status.isEmpty) {
+              continue;
+            }
+            final String? previousV2 = polledStatusByTransferId[row.id];
+            polledStatusByTransferId[row.id] = status;
+            if (!signalsBaselineLoaded) {
+              continue;
+            }
+            if (previousV2 == status) {
+              continue;
+            }
+            final TransferLifecycleEventType? eventV2 =
+                _statusToLifecycleEvent(status);
+            if (eventV2 == null) {
+              continue;
+            }
+            emitSignalEntity(
+              TransferLifecycleSignalEntity(
+                transferId: row.id,
+                senderId: row.senderId,
+                receiverId: row.receiverId,
+                event: eventV2,
+                emittedAt: DateTime.now(),
+              ),
+            );
+          }
+          if (!signalsBaselineLoaded) {
+            _emitCompletedLifecycleCatchupForBaseline(
+              legacyRows: rows,
+              v2Rows: v2Rows,
+              emit: emitSignalEntity,
+            );
+          }
+          signalsBaselineLoaded = true;
           nextDelay = _signalPollInterval;
         } catch (_) {
           nextDelay = nextDelay == Duration.zero
@@ -489,6 +624,8 @@ class TransferRepositoryImpl implements TransferRepository {
     required IncomingTransferOffer transfer,
     bool persistPermanently = true,
     bool trustSender = false,
+    void Function(double progress)? onDownloadProgress,
+    void Function(String summary)? onReceivedFileSaved,
   }) async {
     if (transfer.trustStatus == SenderTrustStatus.blocked) {
       await rejectIncomingTransfer(transferId: transfer.transferId);
@@ -511,6 +648,8 @@ class TransferRepositoryImpl implements TransferRepository {
       fileName: transfer.fileName,
       progressPercent: 0,
     );
+    bool finalFileRenamedToTarget = false;
+    Directory? downloadChunkStagingDir;
     try {
       final bool hasSpace = await hasAvailableStorage(transfer.fileSize);
       if (!hasSpace) {
@@ -520,20 +659,24 @@ class TransferRepositoryImpl implements TransferRepository {
         );
       }
 
-      if (await _localDataSource.fileExistsByFileId(transfer.fileId) ||
-          await _localDataSource.fileHashExists(transfer.fileHash)) {
-        await _localDataSource.updateTransferStatus(
-          transfer.transferId,
-          TransferStatus.completed,
-        );
-        await _localDataSource.updateFileStatusByTransferId(
-          transfer.transferId,
-          FileStatus.completed,
-        );
-        await _transferService.updateTransferStatus(
-          transferId: transfer.transferId,
-          status: TransferStatus.completed.name,
-        );
+      if (!transfer.usesTransfersV2) {
+        if (await _localDataSource.fileExistsByFileId(transfer.fileId) ||
+            await _localDataSource.fileHashExists(transfer.fileHash)) {
+          await _localDataSource.updateTransferStatus(
+            transfer.transferId,
+            TransferStatus.completed,
+          );
+          await _localDataSource.updateFileStatusByTransferId(
+            transfer.transferId,
+            FileStatus.completed,
+          );
+          await _transferService.updateTransferStatus(
+            transferId: transfer.transferId,
+            status: TransferStatus.completed.name,
+          );
+          return;
+        }
+      } else if (await _localTransferSuppressesIncomingV2(transfer.transferId)) {
         return;
       }
 
@@ -545,10 +688,16 @@ class TransferRepositoryImpl implements TransferRepository {
         transfer.transferId,
         FileStatus.uploading,
       );
-      await _transferService.updateTransferStatus(
-        transferId: transfer.transferId,
-        status: TransferStatus.downloading.name,
-      );
+      if (transfer.usesTransfersV2) {
+        await _transferService.rpcBeginTransferDownload(
+          transferUuid: transfer.transferId,
+        );
+      } else {
+        await _transferService.updateTransferStatus(
+          transferId: transfer.transferId,
+          status: TransferStatus.downloading.name,
+        );
+      }
       await _emitOrQueueSignal(
         TransferLifecycleSignal(
           transferId: transfer.transferId,
@@ -585,6 +734,29 @@ class TransferRepositoryImpl implements TransferRepository {
           );
       _downloadManager.registerSession(initialState);
 
+      void Function(double progress)? throttledDownloadProgress;
+      if (onDownloadProgress != null) {
+        DateTime? lastProgressEmit;
+        throttledDownloadProgress = (double progress) {
+          final DateTime now = DateTime.now();
+          if (lastProgressEmit != null &&
+              now.difference(lastProgressEmit!) <
+                  const Duration(milliseconds: 80)) {
+            return;
+          }
+          lastProgressEmit = now;
+          onDownloadProgress(progress.clamp(0.0, 1.0));
+        };
+      }
+      if (transfer.usesTransfersV2) {
+        final Directory base = await getTemporaryDirectory();
+        final Directory staging = Directory(
+          p.join(base.path, 'tranzo_dl', transfer.transferId),
+        );
+        downloadChunkStagingDir = staging;
+        await staging.create(recursive: true);
+      }
+
       bool verified = false;
       List<int> assembled = <int>[];
       for (
@@ -592,7 +764,11 @@ class TransferRepositoryImpl implements TransferRepository {
         integrityAttempt < _maxIntegrityRetries;
         integrityAttempt++
       ) {
-        assembled = await _downloadAllPendingChunks(transfer: transfer);
+        assembled = await _downloadAllPendingChunks(
+          transfer: transfer,
+          chunkStagingPath: downloadChunkStagingDir?.path,
+          onDownloadProgress: throttledDownloadProgress,
+        );
         final String digest = _sha256Hasher.hashBytes(assembled);
         if (digest == transfer.fileHash) {
           verified = true;
@@ -623,10 +799,17 @@ class TransferRepositoryImpl implements TransferRepository {
           transfer.transferId,
           FileStatus.corrupted,
         );
-        await _transferService.updateTransferStatus(
-          transferId: transfer.transferId,
-          status: TransferStatus.failed.name,
-        );
+        if (transfer.usesTransfersV2) {
+          await _transferService.rpcMarkTransferFailed(
+            transferUuid: transfer.transferId,
+            message: 'hash_mismatch',
+          );
+        } else {
+          await _transferService.updateTransferStatus(
+            transferId: transfer.transferId,
+            status: TransferStatus.failed.name,
+          );
+        }
         await _emitOrQueueSignal(
           TransferLifecycleSignal(
             transferId: transfer.transferId,
@@ -647,9 +830,9 @@ class TransferRepositoryImpl implements TransferRepository {
         );
       }
 
-      final Directory appDir = persistPermanently
-          ? await getApplicationDocumentsDirectory()
-          : await getTemporaryDirectory();
+      final Directory appDir = await resolvedReceivedFilesDirectory(
+        persistPermanently: persistPermanently,
+      );
       final File target = await _resolveUniqueTargetFile(
         directoryPath: appDir.path,
         fileName: transfer.fileName,
@@ -669,7 +852,30 @@ class TransferRepositoryImpl implements TransferRepository {
       }
       await tempTarget.writeAsBytes(assembled, flush: true);
       await tempTarget.rename(target.path);
+      finalFileRenamedToTarget = true;
 
+      if (persistPermanently) {
+        final bool addedToGallery = await tryExportReceivedMediaToPhotoLibrary(
+          File(target.path),
+          transfer.fileName,
+        );
+        final String locationLabel = describeReceivedSaveLocation(appDir);
+        final String summary = addedToGallery
+            ? 'Also saved to your Photos library (album Tranzo). File copy: $locationLabel.'
+            : 'Saved to $locationLabel.';
+        onReceivedFileSaved?.call(summary);
+      }
+
+      if (transfer.usesTransfersV2) {
+        await _transferService.rpcMarkTransferCompleted(
+          transferUuid: transfer.transferId,
+        );
+      } else {
+        await _transferService.updateTransferStatus(
+          transferId: transfer.transferId,
+          status: TransferStatus.completed.name,
+        );
+      }
       await _localDataSource.updateTransferStatus(
         transfer.transferId,
         TransferStatus.completed,
@@ -677,10 +883,6 @@ class TransferRepositoryImpl implements TransferRepository {
       await _localDataSource.updateFileStatusByTransferId(
         transfer.transferId,
         FileStatus.completed,
-      );
-      await _transferService.updateTransferStatus(
-        transferId: transfer.transferId,
-        status: TransferStatus.completed.name,
       );
       await _emitOrQueueSignal(
         TransferLifecycleSignal(
@@ -708,18 +910,27 @@ class TransferRepositoryImpl implements TransferRepository {
         reason: error,
         userInitiated: false,
       );
-      await _localDataSource.updateTransferStatus(
-        transfer.transferId,
-        TransferStatus.failed,
-      );
-      await _localDataSource.updateFileStatusByTransferId(
-        transfer.transferId,
-        FileStatus.failed,
-      );
-      await _transferService.updateTransferStatus(
-        transferId: transfer.transferId,
-        status: TransferStatus.failed.name,
-      );
+      if (!finalFileRenamedToTarget) {
+        await _localDataSource.updateTransferStatus(
+          transfer.transferId,
+          TransferStatus.failed,
+        );
+        await _localDataSource.updateFileStatusByTransferId(
+          transfer.transferId,
+          FileStatus.failed,
+        );
+        if (transfer.usesTransfersV2) {
+          await _transferService.rpcMarkTransferFailed(
+            transferUuid: transfer.transferId,
+            message: error.message,
+          );
+        } else {
+          await _transferService.updateTransferStatus(
+            transferId: transfer.transferId,
+            status: TransferStatus.failed.name,
+          );
+        }
+      }
       rethrow;
     } catch (error) {
       await _scheduleBackgroundRetryIfRecoverable(
@@ -727,24 +938,39 @@ class TransferRepositoryImpl implements TransferRepository {
         reason: error,
         userInitiated: false,
       );
-      await _localDataSource.updateTransferStatus(
-        transfer.transferId,
-        TransferStatus.failed,
-      );
-      await _localDataSource.updateFileStatusByTransferId(
-        transfer.transferId,
-        FileStatus.failed,
-      );
-      await _transferService.updateTransferStatus(
-        transferId: transfer.transferId,
-        status: TransferStatus.failed.name,
-      );
+      if (!finalFileRenamedToTarget) {
+        await _localDataSource.updateTransferStatus(
+          transfer.transferId,
+          TransferStatus.failed,
+        );
+        await _localDataSource.updateFileStatusByTransferId(
+          transfer.transferId,
+          FileStatus.failed,
+        );
+        if (transfer.usesTransfersV2) {
+          await _transferService.rpcMarkTransferFailed(
+            transferUuid: transfer.transferId,
+            message: error.toString(),
+          );
+        } else {
+          await _transferService.updateTransferStatus(
+            transferId: transfer.transferId,
+            status: TransferStatus.failed.name,
+          );
+        }
+      }
       throw AppException(error.toString());
     } finally {
       await _backgroundRuntimeService.stopActiveTransfer(
         transferId: transfer.transferId,
       );
       _activeTransferLocks.remove(lockId);
+      final Directory? stagingCleanup = downloadChunkStagingDir;
+      if (stagingCleanup != null && await stagingCleanup.exists()) {
+        try {
+          await stagingCleanup.delete(recursive: true);
+        } catch (_) {}
+      }
     }
   }
 
@@ -762,10 +988,22 @@ class TransferRepositoryImpl implements TransferRepository {
       transferId,
       FileStatus.failed,
     );
-    await _transferService.updateTransferStatus(
-      transferId: transferId,
-      status: TransferStatus.cancelled.name,
-    );
+    bool cloudCancelUpdated = false;
+    try {
+      await _transferService.updateTransfersV2Status(
+        transferUuid: transferId,
+        status: TransferStatus.cancelled.name,
+      );
+      cloudCancelUpdated = true;
+    } catch (_) {
+      try {
+        await _transferService.updateTransferStatus(
+          transferId: transferId,
+          status: TransferStatus.cancelled.name,
+        );
+        cloudCancelUpdated = true;
+      } catch (_) {}
+    }
     if (transfer != null) {
       await _emitOrQueueSignal(
         TransferLifecycleSignal(
@@ -781,6 +1019,13 @@ class TransferRepositoryImpl implements TransferRepository {
         ),
       );
     }
+    if (!cloudCancelUpdated) {
+      throw const AppException(
+        'Transfer was cancelled on this device, but the server could not be '
+        'updated. It may reappear after reinstall until connectivity or '
+        'permissions allow a sync.',
+      );
+    }
   }
 
   @override
@@ -793,13 +1038,62 @@ class TransferRepositoryImpl implements TransferRepository {
       (TransferCollection a, TransferCollection b) =>
           b.createdAt.compareTo(a.createdAt),
     );
-    return localTransfers
+    final List<TransferEntity> localEntities = localTransfers
         .where(
           (TransferCollection transfer) =>
               transfer.senderId == userId || transfer.receiverId == userId,
         )
         .map(_mapCollectionToEntity)
         .toList(growable: false);
+
+    final Map<String, TransferEntity> merged = <String, TransferEntity>{};
+
+    try {
+      final List<TransfersV2Record> cloudV2 = await _transferService
+          .getParticipantTransfersV2(userId);
+      for (final TransfersV2Record row in cloudV2) {
+        final TransferEntity? cloud = _entityFromTransfersV2Record(row);
+        if (cloud == null) {
+          continue;
+        }
+        merged[cloud.id] = cloud;
+      }
+    } catch (_) {
+      // Offline / RLS: fall back to local-only list below.
+    }
+
+    try {
+      final List<TransferSessionRecord> legacy = await _transferService
+          .getParticipantTransfers(userId);
+      for (final TransferSessionRecord row in legacy) {
+        final TransferEntity? cloud = _entityFromLegacyTransferSession(row);
+        if (cloud == null || merged.containsKey(cloud.id)) {
+          continue;
+        }
+        merged[cloud.id] = cloud;
+      }
+    } catch (_) {
+      // Legacy table may be absent; ignore.
+    }
+
+    for (final TransferEntity local in localEntities) {
+      final TransferEntity? cloud = merged[local.id];
+      if (cloud == null) {
+        merged[local.id] = local;
+      } else {
+        merged[local.id] = _mergeParticipantHistoryPreferCloud(
+          cloud: cloud,
+          local: local,
+        );
+      }
+    }
+
+    final List<TransferEntity> out = merged.values.toList()
+      ..sort(
+        (TransferEntity a, TransferEntity b) =>
+            b.createdAt.compareTo(a.createdAt),
+      );
+    return out;
   }
 
   @override
@@ -943,36 +1237,31 @@ class TransferRepositoryImpl implements TransferRepository {
       for (final SelectedTransferFile file in sortedFiles) {
         String? activeTransferId;
         String? activeFileHash;
-        String activeStoragePath = '$sessionId/${file.id}';
+        late String activeStoragePath;
         try {
-          final String transferId =
-              '${sessionId}_${_sanitizeTransferIdComponent(file.id)}';
+          final String transferUuid = const Uuid().v4();
           final DateTime transferCreatedAt = DateTime.now();
-          activeTransferId = transferId;
-          _cancelledTransferIds.remove(transferId);
+          activeTransferId = transferUuid;
+          _cancelledTransferIds.remove(transferUuid);
           final String fileHash = await _sha256Hasher.hashFile(file.localPath);
           activeFileHash = fileHash;
-          final TransferSessionRecord session = await _transferService
-              .createTransferSession(
-                TransferSessionPayload(
-                  transferId: transferId,
-                  senderId: effectiveSenderId,
-                  receiverId: receiverId,
-                  fileName: file.fileName,
-                  fileSize: file.sizeBytes,
-                  fileHash: fileHash,
-                  status: TransferStatus.uploading.name,
-                  storagePath: activeStoragePath,
-                  createdAt: transferCreatedAt,
-                ),
+          final TransfersV2Record session = await _transferService
+              .insertTransfersV2(
+                transferUuid: transferUuid,
+                senderId: effectiveSenderId,
+                receiverId: receiverId,
+                fileName: file.fileName,
+                fileSize: file.sizeBytes,
+                fileHash: fileHash,
+                mimeType: null,
               );
-          activeTransferId = session.transferId;
+          activeStoragePath = session.storageRoot;
           await _upsertLocalTransfer(
             transferEntity: TransferEntity(
-              id: session.transferId,
+              id: transferUuid,
               senderId: effectiveSenderId,
               receiverId: receiverId,
-              status: TransferStatus.uploading,
+              status: TransferStatus.queued,
               createdAt: transferCreatedAt,
               fileName: file.fileName,
               fileSize: file.sizeBytes,
@@ -991,34 +1280,42 @@ class TransferRepositoryImpl implements TransferRepository {
             'transfer_start',
             name: 'transfer',
             error: <String, Object?>{
-              'transferId': session.transferId,
+              'transferId': transferUuid,
               'fileId': file.id,
               'fileName': file.fileName,
             },
           );
           await _emitOrQueueSignal(
             TransferLifecycleSignal(
-              transferId: session.transferId,
+              transferId: transferUuid,
               senderId: effectiveSenderId,
               receiverId: receiverId,
               event: TransferLifecycleEvent.transferStarted,
               emittedAt: DateTime.now(),
-              fileId: file.id,
+              fileId: 'v2-$transferUuid',
               fileName: file.fileName,
               fileSize: file.sizeBytes,
               fileHash: fileHash,
               storagePath: activeStoragePath,
             ),
           );
+          await _transferService.updateTransfersV2Status(
+            transferUuid: transferUuid,
+            status: TransferStatus.uploading.name,
+          );
+          await _localDataSource.updateTransferStatus(
+            transferUuid,
+            TransferStatus.uploading,
+          );
           final TransferTask task = TransferTask(
-            id: session.transferId,
+            id: transferUuid,
             fileName: file.fileName,
             totalBytes: file.sizeBytes,
             localPath: file.localPath,
           );
           final TransferResumeState initialState =
               await _localDataSource.getTransferProgress(
-                session.transferId,
+                transferUuid,
                 fileId: file.id,
               ) ??
               TransferResumeState(
@@ -1032,7 +1329,7 @@ class TransferRepositoryImpl implements TransferRepository {
               );
           _uploadManager.registerSession(initialState);
           final List<ChunkDescriptor> chunks = _uploadManager.pendingChunksFor(
-            session.transferId,
+            transferUuid,
           );
           final File source = File(file.localPath);
 
@@ -1052,7 +1349,7 @@ class TransferRepositoryImpl implements TransferRepository {
 
           final int totalChunks = _uploadManager.chunkPlanFor(task).length;
           for (final ChunkDescriptor chunk in chunks) {
-            if (_isTransferCancelled(session.transferId)) {
+            if (_isTransferCancelled(transferUuid)) {
               throw const AppException(
                 'Transfer cancelled by user.',
                 code: AppErrorCode.unknown,
@@ -1063,19 +1360,19 @@ class TransferRepositoryImpl implements TransferRepository {
                 'transfer_paused_network_lost',
                 name: 'transfer',
                 error: <String, Object?>{
-                  'transferId': session.transferId,
+                  'transferId': transferUuid,
                   'fileId': file.id,
                 },
               );
-              await _handleNoNetworkDuringTransfer(session.transferId);
+              await _handleNoNetworkDuringTransfer(transferUuid);
             }
             final Stream<List<int>> bytes = source.openRead(
               chunk.startByte,
               chunk.endByteExclusive,
             );
-            await _remoteDataSource.uploadChunk(
-              sessionId: session.transferId,
-              fileId: file.id,
+            await _remoteDataSource.uploadTransfersV2Chunk(
+              senderId: effectiveSenderId,
+              transferUuid: transferUuid,
               chunkIndex: chunk.index,
               byteStream: bytes,
             );
@@ -1083,13 +1380,17 @@ class TransferRepositoryImpl implements TransferRepository {
               'chunk_upload_success',
               name: 'transfer',
               error: <String, Object?>{
-                'transferId': session.transferId,
+                'transferId': transferUuid,
                 'fileId': file.id,
                 'chunkIndex': chunk.index,
               },
             );
+            await _transferService.rpcReportChunkUploaded(
+              transferUuid: transferUuid,
+              chunkIndex: chunk.index,
+            );
             final TransferResumeState? updated = _uploadManager
-                .acknowledgeChunkComplete(session.transferId, chunk.index);
+                .acknowledgeChunkComplete(transferUuid, chunk.index);
             if (updated != null) {
               await _localDataSource.upsertTransferProgress(updated);
             }
@@ -1110,8 +1411,9 @@ class TransferRepositoryImpl implements TransferRepository {
               progressPercent: _progressPercent(chunk.index + 1, totalChunks),
             );
             await _syncProgressThrottled(
-              transferId: session.transferId,
+              transferId: transferUuid,
               status: TransferStatus.uploading,
+              writeLegacyTransferSessions: false,
             );
             yield TransferBatchProgress(
               sessionId: sessionId,
@@ -1119,6 +1421,9 @@ class TransferRepositoryImpl implements TransferRepository {
             );
           }
 
+          await _transferService.rpcMarkTransferUploaded(
+            transferUuid: transferUuid,
+          );
           _replaceProgress(
             progress,
             TransferFileProgress(
@@ -1133,34 +1438,16 @@ class TransferRepositoryImpl implements TransferRepository {
             files: List<TransferFileProgress>.from(progress),
           );
           await _localDataSource.updateTransferStatus(
-            session.transferId,
-            TransferStatus.completed,
-          );
-          await _transferService.updateTransferStatus(
-            transferId: session.transferId,
-            status: TransferStatus.completed.name,
-          );
-          await _emitOrQueueSignal(
-            TransferLifecycleSignal(
-              transferId: session.transferId,
-              senderId: effectiveSenderId,
-              receiverId: receiverId,
-              event: TransferLifecycleEvent.transferCompleted,
-              emittedAt: DateTime.now(),
-              fileId: file.id,
-              fileName: file.fileName,
-              fileSize: file.sizeBytes,
-              fileHash: fileHash,
-              storagePath: activeStoragePath,
-            ),
+            transferUuid,
+            TransferStatus.uploaded,
           );
           await _localDataSource.clearTransferProgress(
-            session.transferId,
+            transferUuid,
             fileId: file.id,
           );
-          _clearRetryState(session.transferId);
+          _clearRetryState(transferUuid);
           await _backgroundRuntimeService.cancelRetry(
-            transferId: session.transferId,
+            transferId: transferUuid,
           );
         } catch (error) {
           final String reason = error.toString();
@@ -1175,10 +1462,19 @@ class TransferRepositoryImpl implements TransferRepository {
               TransferStatus.failed,
             );
             try {
-              await _transferService.updateTransferStatus(
-                transferId: activeTransferId,
-                status: TransferStatus.failed.name,
+              await _transferService.rpcMarkTransferFailed(
+                transferUuid: activeTransferId,
+                message: reason,
               );
+            } catch (_) {
+              try {
+                await _transferService.updateTransferStatus(
+                  transferId: activeTransferId,
+                  status: TransferStatus.failed.name,
+                );
+              } catch (_) {}
+            }
+            try {
               await _emitOrQueueSignal(
                 TransferLifecycleSignal(
                   transferId: activeTransferId,
@@ -1290,6 +1586,104 @@ class TransferRepositoryImpl implements TransferRepository {
     );
   }
 
+  TransferEntity? _entityFromTransfersV2Record(TransfersV2Record row) {
+    final TransferStatus? status = _transferStatusFromTransfersV2CloudString(
+      row.status,
+    );
+    if (status == null) {
+      return null;
+    }
+    final DateTime createdAt =
+        DateTime.tryParse(row.row['created_at'] as String? ?? '') ??
+        DateTime.now();
+    final String name = row.fileName.trim();
+    return TransferEntity(
+      id: row.id,
+      senderId: row.senderId,
+      receiverId: row.receiverId,
+      status: status,
+      createdAt: createdAt,
+      fileName: name.isEmpty ? 'Unknown file' : name,
+      fileSize: row.fileSize,
+      senderUsername: null,
+      receiverUsername: null,
+      expiresAt: row.row['expires_at'] != null
+          ? DateTime.tryParse(row.row['expires_at'] as String)
+          : null,
+    );
+  }
+
+  TransferEntity? _entityFromLegacyTransferSession(
+    TransferSessionRecord record,
+  ) {
+    final TransferStatus status = _transferStatusFromLegacySessionRow(
+      record.row['status'] as String?,
+    );
+    final DateTime createdAt =
+        DateTime.tryParse(record.row['created_at'] as String? ?? '') ??
+        DateTime.now();
+    final String? fileName = record.row['file_name'] as String?;
+    final int fileSize = record.row['file_size'] as int? ?? 0;
+    return TransferEntity(
+      id: record.transferId,
+      senderId: record.senderId,
+      receiverId: record.receiverId,
+      status: status,
+      createdAt: createdAt,
+      fileName: (fileName == null || fileName.trim().isEmpty)
+          ? 'Unknown file'
+          : fileName,
+      fileSize: fileSize,
+      senderUsername: null,
+      receiverUsername: null,
+      expiresAt: record.row['expires_at'] != null
+          ? DateTime.tryParse(record.row['expires_at'] as String)
+          : null,
+    );
+  }
+
+  TransferStatus _transferStatusFromLegacySessionRow(String? raw) {
+    switch ((raw ?? '').trim().toLowerCase()) {
+      case 'completed':
+        return TransferStatus.completed;
+      case 'failed':
+        return TransferStatus.failed;
+      case 'cancelled':
+      case 'canceled':
+        return TransferStatus.cancelled;
+      case 'downloading':
+        return TransferStatus.downloading;
+      case 'uploading':
+        return TransferStatus.uploading;
+      case 'pending':
+        return TransferStatus.pending;
+      default:
+        return TransferStatus.pending;
+    }
+  }
+
+  TransferEntity _mergeParticipantHistoryPreferCloud({
+    required TransferEntity cloud,
+    required TransferEntity local,
+  }) {
+    final String cloudName = cloud.fileName.trim();
+    final String localName = local.fileName.trim();
+    return TransferEntity(
+      id: cloud.id,
+      senderId: cloud.senderId,
+      receiverId: cloud.receiverId,
+      status: cloud.status,
+      createdAt: cloud.createdAt,
+      fileName: cloudName.isEmpty || cloudName == 'Unknown file'
+          ? (localName.isEmpty ? 'Unknown file' : local.fileName)
+          : cloud.fileName,
+      fileSize: cloud.fileSize != 0 ? cloud.fileSize : local.fileSize,
+      senderUsername: cloud.senderUsername ?? local.senderUsername,
+      receiverUsername: cloud.receiverUsername ?? local.receiverUsername,
+      expiresAt: cloud.expiresAt ?? local.expiresAt,
+    );
+  }
+
   void _replaceProgress(
     List<TransferFileProgress> progress,
     TransferFileProgress next,
@@ -1355,10 +1749,19 @@ class TransferRepositoryImpl implements TransferRepository {
       transfer.transferId,
       TransferStatus.cancelled,
     );
-    await _transferService.updateTransferStatus(
-      transferId: transfer.transferId,
-      status: TransferStatus.cancelled.name,
-    );
+    try {
+      await _transferService.updateTransfersV2Status(
+        transferUuid: transfer.transferId,
+        status: TransferStatus.cancelled.name,
+      );
+    } catch (_) {
+      try {
+        await _transferService.updateTransferStatus(
+          transferId: transfer.transferId,
+          status: TransferStatus.cancelled.name,
+        );
+      } catch (_) {}
+    }
     await _emitOrQueueSignal(
       TransferLifecycleSignal(
         transferId: transfer.transferId,
@@ -1458,7 +1861,11 @@ class TransferRepositoryImpl implements TransferRepository {
   Future<void> _syncProgressThrottled({
     required String transferId,
     required TransferStatus status,
+    bool writeLegacyTransferSessions = true,
   }) async {
+    if (!writeLegacyTransferSessions) {
+      return;
+    }
     final DateTime now = DateTime.now();
     if (_lastProgressSyncAt != null &&
         now.difference(_lastProgressSyncAt!) < const Duration(seconds: 3)) {
@@ -1475,8 +1882,133 @@ class TransferRepositoryImpl implements TransferRepository {
     }
   }
 
+  TransferStatus? _transferStatusFromTransfersV2CloudString(String? raw) {
+    switch ((raw ?? '').trim().toLowerCase()) {
+      case 'queued':
+        return TransferStatus.queued;
+      case 'uploading':
+        return TransferStatus.uploading;
+      case 'uploaded':
+        return TransferStatus.uploaded;
+      case 'downloading':
+        return TransferStatus.downloading;
+      case 'completed':
+        return TransferStatus.completed;
+      case 'failed':
+        return TransferStatus.failed;
+      case 'cancelled':
+        return TransferStatus.cancelled;
+      default:
+        return null;
+    }
+  }
+
+  /// Keeps local history rows aligned with `public.transfers` (sender was stuck
+  /// on [TransferStatus.uploaded] / "Ready" after the receiver finished).
+  Future<void> _syncLocalTransferRowFromV2Remote({
+    required TransfersV2Record row,
+    required String viewerUserId,
+  }) async {
+    final TransferStatus? remote = _transferStatusFromTransfersV2CloudString(
+      row.status,
+    );
+    if (remote == null) {
+      return;
+    }
+
+    final TransferCollection? local = await _isar.transferCollections
+        .filter()
+        .transferIdEqualTo(row.id)
+        .findFirst();
+    if (local == null) {
+      return;
+    }
+
+    final TransferStatus cur = local.status;
+    if (remote == TransferStatus.failed &&
+        cur == TransferStatus.completed) {
+      return;
+    }
+    const Set<TransferStatus> terminal = <TransferStatus>{
+      TransferStatus.completed,
+      TransferStatus.failed,
+      TransferStatus.cancelled,
+    };
+
+    if (terminal.contains(remote)) {
+      if (cur != remote) {
+        await _localDataSource.updateTransferStatus(row.id, remote);
+      }
+      return;
+    }
+
+    if (terminal.contains(cur)) {
+      return;
+    }
+
+    final bool viewerIsSender = row.senderId == viewerUserId;
+    if (viewerIsSender &&
+        remote == TransferStatus.downloading &&
+        (cur == TransferStatus.uploaded || cur == TransferStatus.uploading)) {
+      return;
+    }
+
+    if (remote == TransferStatus.uploaded &&
+        cur == TransferStatus.downloading) {
+      return;
+    }
+
+    if (cur != remote) {
+      await _localDataSource.updateTransferStatus(row.id, remote);
+    }
+  }
+
+  /// First successful participant poll only seeds [polledStatusByTransferId]
+  /// and suppresses transition events. Emit one [transferCompleted] per row
+  /// already completed in the cloud so the home card can hydrate (otherwise
+  /// there is no `null → completed` transition on the next poll).
+  void _emitCompletedLifecycleCatchupForBaseline({
+    required List<TransferSessionRecord> legacyRows,
+    required List<TransfersV2Record> v2Rows,
+    required void Function(TransferLifecycleSignalEntity entity) emit,
+  }) {
+    for (final TransferSessionRecord row in legacyRows) {
+      final String status = (row.row['status'] as String? ?? '')
+          .trim()
+          .toLowerCase();
+      if (status != 'completed') {
+        continue;
+      }
+      emit(
+        TransferLifecycleSignalEntity(
+          transferId: row.transferId,
+          senderId: row.senderId,
+          receiverId: row.receiverId,
+          event: TransferLifecycleEventType.transferCompleted,
+          emittedAt: DateTime.now(),
+        ),
+      );
+    }
+    for (final TransfersV2Record row in v2Rows) {
+      if (row.status.trim().toLowerCase() != 'completed') {
+        continue;
+      }
+      emit(
+        TransferLifecycleSignalEntity(
+          transferId: row.id,
+          senderId: row.senderId,
+          receiverId: row.receiverId,
+          event: TransferLifecycleEventType.transferCompleted,
+          emittedAt: DateTime.now(),
+        ),
+      );
+    }
+  }
+
   TransferLifecycleEventType? _statusToLifecycleEvent(String status) {
     switch (status) {
+      case 'uploaded':
+        return TransferLifecycleEventType.transferAccepted;
       case 'downloading':
         return TransferLifecycleEventType.transferAccepted;
       case 'completed':
@@ -1488,6 +2020,49 @@ class TransferRepositoryImpl implements TransferRepository {
       default:
         return null;
     }
+  }
+
+  /// Hides v2 incoming offers after this device has reached a terminal outcome
+  /// (received, user-dismissed, or failed) so polling does not resurrect them.
+  Future<bool> _localTransferSuppressesIncomingV2(String transferId) async {
+    final TransferCollection? row = await _isar.transferCollections
+        .filter()
+        .transferIdEqualTo(transferId)
+        .findFirst();
+    if (row == null) {
+      return false;
+    }
+    return row.status == TransferStatus.completed ||
+        row.status == TransferStatus.cancelled ||
+        row.status == TransferStatus.failed;
+  }
+
+  Future<IncomingTransferOffer?> _mapTransfersV2RecordToOffer(
+    TransfersV2Record record,
+  ) async {
+    final SenderTrustStatus trustStatus = await _resolveSenderTrustStatus(
+      record.senderId,
+    );
+    final String fileId = 'v2-${record.id}';
+    return IncomingTransferOffer(
+      transferId: record.id,
+      senderId: record.senderId,
+      receiverId: record.receiverId,
+      fileId: fileId,
+      fileName: record.fileName,
+      fileSize: record.fileSize,
+      fileHash: record.fileHash,
+      storagePath: record.storageRoot,
+      createdAt: DateTime.tryParse(
+            record.row['created_at'] as String? ?? '',
+          ) ??
+          DateTime.now(),
+      trustStatus: trustStatus,
+      requiresApproval: trustStatus == SenderTrustStatus.unknown,
+      cloudProgressPercent: record.progress,
+      cloudStatus: record.status,
+      usesTransfersV2: true,
+    );
   }
 
   TransferLifecycleEventType _mapSignalEventToEntity(
@@ -1509,6 +2084,8 @@ class TransferRepositoryImpl implements TransferRepository {
 
   Future<List<int>> _downloadAllPendingChunks({
     required IncomingTransferOffer transfer,
+    String? chunkStagingPath,
+    void Function(double progress)? onDownloadProgress,
   }) async {
     final TransferResumeState? state = _downloadManager.stateManager.getState(
       transfer.transferId,
@@ -1526,6 +2103,8 @@ class TransferRepositoryImpl implements TransferRepository {
       final List<int> bytes = await _downloadChunkWithRetries(
         transfer: transfer,
         chunkIndex: chunk.index,
+        chunkStagingPath: chunkStagingPath,
+        onDownloadProgress: onDownloadProgress,
       );
       chunksByIndex[chunk.index] = bytes;
       final TransferResumeState? updated = _downloadManager
@@ -1538,9 +2117,16 @@ class TransferRepositoryImpl implements TransferRepository {
         fileName: transfer.fileName,
         progressPercent: _progressPercent(chunk.index + 1, totalChunks),
       );
+      if (transfer.usesTransfersV2) {
+        await _transferService.rpcReportChunkDownloaded(
+          transferUuid: transfer.transferId,
+          chunkIndex: chunk.index,
+        );
+      }
       await _syncProgressThrottled(
         transferId: transfer.transferId,
         status: TransferStatus.downloading,
+        writeLegacyTransferSessions: !transfer.usesTransfersV2,
       );
     }
 
@@ -1563,6 +2149,8 @@ class TransferRepositoryImpl implements TransferRepository {
             await _downloadChunkWithRetries(
               transfer: transfer,
               chunkIndex: descriptor.index,
+              chunkStagingPath: chunkStagingPath,
+              onDownloadProgress: onDownloadProgress,
             ),
       );
     }
@@ -1572,6 +2160,8 @@ class TransferRepositoryImpl implements TransferRepository {
   Future<List<int>> _downloadChunkWithRetries({
     required IncomingTransferOffer transfer,
     required int chunkIndex,
+    String? chunkStagingPath,
+    void Function(double progress)? onDownloadProgress,
   }) async {
     int attempt = 0;
     while (true) {
@@ -1591,11 +2181,77 @@ class TransferRepositoryImpl implements TransferRepository {
             code: AppErrorCode.unknown,
           );
         }
-        final List<int> chunk = await _remoteDataSource.downloadChunk(
-          sessionId: transfer.transferId,
-          fileId: transfer.fileId,
-          chunkIndex: chunkIndex,
-        );
+        final List<int> chunk;
+        if (transfer.usesTransfersV2) {
+          if (chunkStagingPath == null || chunkStagingPath.isEmpty) {
+            throw const AppException(
+              'Missing download staging path.',
+              code: AppErrorCode.chunkTransferFailed,
+            );
+          }
+          final List<ChunkDescriptor> layout = _downloadManager.chunkManager
+              .split(totalBytes: transfer.fileSize);
+          if (chunkIndex < 0 || chunkIndex >= layout.length) {
+            throw const AppException(
+              'Invalid chunk index.',
+              code: AppErrorCode.chunkTransferFailed,
+            );
+          }
+          final ChunkDescriptor meta = layout[chunkIndex];
+          final String chunkPath = p.join(
+            chunkStagingPath,
+            'c$chunkIndex.part',
+          );
+          final File chunkFile = File(chunkPath);
+          if (await chunkFile.exists()) {
+            await chunkFile.delete();
+          }
+          final String signedUrl =
+              await _transferService.createSignedUrlForTransfersV2Chunk(
+            senderId: transfer.senderId,
+            transferUuid: transfer.transferId,
+            chunkIndex: chunkIndex,
+          );
+          try {
+            await _remoteDataSource.downloadFromSignedUrlToFile(
+              signedUrl: signedUrl,
+              destinationPath: chunkPath,
+              onReceiveProgress: (int received, int total) {
+                if (onDownloadProgress == null) {
+                  return;
+                }
+                final int denom = transfer.fileSize;
+                if (denom <= 0) {
+                  return;
+                }
+                final int chunkTotal = total > 0 ? total : meta.lengthBytes;
+                final int clampedReceived = received > chunkTotal
+                    ? chunkTotal
+                    : received;
+                onDownloadProgress(
+                  ((meta.startByte + clampedReceived) / denom).clamp(0.0, 1.0),
+                );
+              },
+            );
+          } on DioException catch (e) {
+            throw AppException(
+              e.message?.trim().isNotEmpty == true
+                  ? e.message!.trim()
+                  : 'Network download failed.',
+              code: AppErrorCode.chunkTransferFailed,
+            );
+          }
+          chunk = await chunkFile.readAsBytes();
+          if (await chunkFile.exists()) {
+            await chunkFile.delete();
+          }
+        } else {
+          chunk = await _remoteDataSource.downloadChunk(
+            sessionId: transfer.transferId,
+            fileId: transfer.fileId,
+            chunkIndex: chunkIndex,
+          );
+        }
         developer.log(
           'chunk_download_success',
           name: 'transfer',
@@ -1734,7 +2390,10 @@ class TransferRepositoryImpl implements TransferRepository {
       ..fileId = fileId
       ..queuedAt = now
       ..expiresAt = now.add(AppConstants.receiverOfflineQueueTtl)
-      ..status = _offlineQueueStatusPending;
+      ..status = _offlineQueueStatusPending
+      ..payloadJson = jsonEncode(signal.toPayload())
+      ..attemptCount = 0
+      ..priority = 0;
     await _isar.writeTxn(() async {
       await _isar.queuedTransferCollections.putByQueueKey(row);
     });
@@ -1773,8 +2432,32 @@ class TransferRepositoryImpl implements TransferRepository {
       developer.log(
         'offline_retry_pending_user_action',
         name: 'transfer',
-        error: <String, Object?>{'transferId': row.transferId},
+        error: <String, Object?>{
+          'transferId': row.transferId,
+          'hasPayload': row.payloadJson != null,
+          'attemptCount': row.attemptCount,
+        },
       );
+      if (row.payloadJson != null && row.payloadJson!.trim().isNotEmpty) {
+        try {
+          final Map<String, dynamic> decoded =
+              jsonDecode(row.payloadJson!) as Map<String, dynamic>;
+          final TransferLifecycleSignal? parsed =
+              TransferLifecycleSignal.fromPayload(decoded);
+          if (parsed != null) {
+            await _emitOrQueueSignal(parsed);
+          }
+        } catch (error) {
+          developer.log(
+            'offline_queue_payload_decode_failed',
+            name: 'transfer',
+            error: <String, Object?>{
+              'transferId': row.transferId,
+              'message': error.toString(),
+            },
+          );
+        }
+      }
     }
   }
 
@@ -1800,17 +2483,4 @@ class TransferRepositoryImpl implements TransferRepository {
     }
   }
 
-  String _sanitizeTransferIdComponent(String raw) {
-    final String normalized = raw
-        .trim()
-        .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')
-        .replaceAll(RegExp(r'_+'), '_');
-    if (normalized.isEmpty) {
-      return 'file';
-    }
-    const int maxLength = 48;
-    return normalized.length <= maxLength
-        ? normalized
-        : normalized.substring(0, maxLength);
-  }
 }

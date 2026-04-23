@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../domain/entities/incoming_transfer_offer.dart';
 import '../../domain/entities/transfer_lifecycle_signal.dart';
 import '../bloc/transfer/transfer_bloc.dart';
 import '../bloc/transfer/transfer_event.dart';
@@ -23,10 +24,16 @@ class _DownloadPageState extends State<DownloadPage> {
           if (state.incomingTransfers.isEmpty) {
             return const Center(child: Text('No incoming transfers.'));
           }
+          final bool showTopDownloadProgress =
+              state.showInAppProgress ||
+              (state.status == TransferStatus.loading &&
+                  state.activeTransferId != null);
           return Column(
             children: <Widget>[
-              if (state.showInAppProgress)
-                LinearProgressIndicator(value: state.progress),
+              if (showTopDownloadProgress)
+                LinearProgressIndicator(
+                  value: state.progress.clamp(0.0, 1.0),
+                ),
               Expanded(
                 child: ListView.separated(
                   padding: const EdgeInsets.all(16),
@@ -39,9 +46,16 @@ class _DownloadPageState extends State<DownloadPage> {
                         state.status == TransferStatus.loading &&
                         state.activeTransferId == transfer.transferId;
                     final double progressValue = state.progress.clamp(0.0, 1.0);
+                    final double? remoteProgress = transfer.cloudProgressPercent !=
+                            null
+                        ? (transfer.cloudProgressPercent! / 100.0).clamp(
+                            0.0,
+                            1.0,
+                          )
+                        : null;
                     final String statusLabel = _statusLabelForTransfer(
                       state: state,
-                      transferId: transfer.transferId,
+                      transfer: transfer,
                       isActiveDownload: isActiveDownload,
                     );
                     return Card(
@@ -86,7 +100,21 @@ class _DownloadPageState extends State<DownloadPage> {
                               LinearProgressIndicator(value: progressValue),
                               const SizedBox(height: 6),
                               Text(
-                                '${(progressValue * 100).toStringAsFixed(0)}% downloading',
+                                '${(progressValue * 100).toStringAsFixed(0)}% receiving',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                            if (!isActiveDownload &&
+                                remoteProgress != null &&
+                                transfer.usesTransfersV2) ...<Widget>[
+                              const SizedBox(height: 10),
+                              LinearProgressIndicator(value: remoteProgress),
+                              const SizedBox(height: 6),
+                              Text(
+                                _v2RemoteProgressSubtitle(
+                                  transfer: transfer,
+                                  remoteProgress: remoteProgress,
+                                ),
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
@@ -95,7 +123,16 @@ class _DownloadPageState extends State<DownloadPage> {
                               children: <Widget>[
                                 Expanded(
                                   child: FilledButton(
-                                    onPressed: isActiveDownload
+                                    onPressed: isActiveDownload ||
+                                            (transfer.usesTransfersV2 &&
+                                                !<String>{
+                                                  'uploaded',
+                                                  'downloading',
+                                                }.contains(
+                                                  transfer.cloudStatus
+                                                          ?.toLowerCase() ??
+                                                      '',
+                                                ))
                                         ? null
                                         : () async {
                                             final TransferBloc transferBloc =
@@ -227,15 +264,59 @@ class _DownloadPageState extends State<DownloadPage> {
     );
   }
 
+  String _v2RemoteProgressSubtitle({
+    required IncomingTransferOffer transfer,
+    required double remoteProgress,
+  }) {
+    final String s = (transfer.cloudStatus ?? '').toLowerCase();
+    final int pct = (remoteProgress * 100).round();
+    if (s == 'uploading' && remoteProgress >= 1.0) {
+      return 'Finishing upload on server…';
+    }
+    if (s == 'uploading') {
+      return '$pct% · sender uploading';
+    }
+    if (s == 'downloading') {
+      return '$pct% receiving';
+    }
+    return '$pct%';
+  }
+
   String _statusLabelForTransfer({
     required TransferState state,
-    required String transferId,
+    required IncomingTransferOffer transfer,
     required bool isActiveDownload,
   }) {
     if (isActiveDownload) {
-      return 'Downloading';
+      return 'Receiving…';
     }
-    final signal = state.lifecycleSignalsByTransferId[transferId];
+    if (transfer.usesTransfersV2) {
+      final String s = (transfer.cloudStatus ?? '').toLowerCase();
+      final int? cloudPct = transfer.cloudProgressPercent;
+      if (s == 'uploading' && cloudPct != null && cloudPct >= 100) {
+        return 'Finalizing upload…';
+      }
+      switch (s) {
+        case 'queued':
+          return 'Waiting…';
+        case 'uploading':
+          return 'Sender uploading…';
+        case 'uploaded':
+          return 'Ready to download';
+        case 'downloading':
+          return 'Receiving…';
+        case 'completed':
+          return 'Done';
+        case 'failed':
+          return 'Failed';
+        case 'cancelled':
+          return 'Cancelled';
+        default:
+          break;
+      }
+    }
+    final signal =
+        state.lifecycleSignalsByTransferId[transfer.transferId];
     if (signal == null) {
       return 'Pending';
     }

@@ -234,4 +234,65 @@ class RealtimeService {
 
     return controller.stream;
   }
+
+  /// Postgres Realtime row updates for [public.transfers] (progress + status).
+  Stream<Map<String, dynamic>> listenTransfersV2Postgres({
+    required String userId,
+  }) {
+    if (userId.trim().isEmpty) {
+      throw const AppException('User id is empty.');
+    }
+    final String channelKey = 'transfers_v2_pg:$userId';
+    final StreamController<Map<String, dynamic>> controller =
+        StreamController<Map<String, dynamic>>();
+    final RealtimeChannel channel = _client.channel(channelKey);
+    _channels[channelKey] = channel;
+
+    void emitRecord(PostgresChangePayload payload) {
+      final Map<String, dynamic> record = payload.newRecord.isNotEmpty
+          ? payload.newRecord
+          : payload.oldRecord;
+      if (record.isNotEmpty && !controller.isClosed) {
+        controller.add(Map<String, dynamic>.from(record));
+      }
+    }
+
+    channel
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'transfers',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'receiver_id',
+          value: userId,
+        ),
+        callback: emitRecord,
+      )
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'transfers',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'sender_id',
+          value: userId,
+        ),
+        callback: emitRecord,
+      );
+
+    try {
+      channel.subscribe();
+    } catch (_) {
+      controller.addError(
+        const AppException('Realtime transfers subscription unavailable.'),
+      );
+    }
+
+    controller.onCancel = () async {
+      await channel.unsubscribe();
+      _channels.remove(channelKey);
+    };
+    return controller.stream;
+  }
 }

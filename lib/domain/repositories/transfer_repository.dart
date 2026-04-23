@@ -47,6 +47,8 @@ abstract interface class TransferRepository {
     required IncomingTransferOffer transfer,
     bool persistPermanently = true,
     bool trustSender = false,
+    void Function(double progress)? onDownloadProgress,
+    void Function(String summary)? onReceivedFileSaved,
   });
 
   Future<void> rejectIncomingTransfer({required String transferId});

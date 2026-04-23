@@ -5,7 +5,14 @@ import '../../../domain/entities/transfer_batch_progress.dart';
 import '../../../domain/entities/selected_transfer_file.dart';
 import '../../../domain/entities/transfer_lifecycle_signal.dart';
 
-enum TransferStatus { initial, loading, success, error }
+enum TransferStatus {
+  initial,
+  loading,
+  success,
+  error,
+  /// Receiver cancelled or declined; not a sender-side failure.
+  receiverDeclined,
+}
 
 class PendingUploadConfirmation extends Equatable {
   const PendingUploadConfirmation({

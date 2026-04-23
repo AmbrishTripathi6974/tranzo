@@ -172,6 +172,8 @@ class _FakeTransferRepository implements TransferRepository {
     required IncomingTransferOffer transfer,
     bool persistPermanently = true,
     bool trustSender = false,
+    void Function(double progress)? onDownloadProgress,
+    void Function(String summary)? onReceivedFileSaved,
   }) async {}
 
   @override

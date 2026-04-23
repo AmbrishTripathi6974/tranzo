@@ -15,4 +15,14 @@ class QueuedTransferCollection {
   late DateTime expiresAt;
   late String status;
   String? reason;
+
+  /// Serialized outbound job for offline replay (optional).
+  String? payloadJson;
+
+  int attemptCount = 0;
+  DateTime? nextAttemptAt;
+  String? lastError;
+
+  /// Higher runs first (user-initiated > auto).
+  int priority = 0;
 }

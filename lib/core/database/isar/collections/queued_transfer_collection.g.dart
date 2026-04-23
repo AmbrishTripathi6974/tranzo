@@ -18,26 +18,47 @@ const QueuedTransferCollectionSchema = CollectionSchema(
   name: r'QueuedTransferCollection',
   id: 1944696369555128332,
   properties: {
-    r'expiresAt': PropertySchema(
+    r'attemptCount': PropertySchema(
       id: 0,
+      name: r'attemptCount',
+      type: IsarType.long,
+    ),
+    r'expiresAt': PropertySchema(
+      id: 1,
       name: r'expiresAt',
       type: IsarType.dateTime,
     ),
-    r'fileId': PropertySchema(id: 1, name: r'fileId', type: IsarType.string),
+    r'fileId': PropertySchema(id: 2, name: r'fileId', type: IsarType.string),
+    r'lastError': PropertySchema(
+      id: 3,
+      name: r'lastError',
+      type: IsarType.string,
+    ),
+    r'nextAttemptAt': PropertySchema(
+      id: 4,
+      name: r'nextAttemptAt',
+      type: IsarType.dateTime,
+    ),
+    r'payloadJson': PropertySchema(
+      id: 5,
+      name: r'payloadJson',
+      type: IsarType.string,
+    ),
+    r'priority': PropertySchema(id: 6, name: r'priority', type: IsarType.long),
     r'queueKey': PropertySchema(
-      id: 2,
+      id: 7,
       name: r'queueKey',
       type: IsarType.string,
     ),
     r'queuedAt': PropertySchema(
-      id: 3,
+      id: 8,
       name: r'queuedAt',
       type: IsarType.dateTime,
     ),
-    r'reason': PropertySchema(id: 4, name: r'reason', type: IsarType.string),
-    r'status': PropertySchema(id: 5, name: r'status', type: IsarType.string),
+    r'reason': PropertySchema(id: 9, name: r'reason', type: IsarType.string),
+    r'status': PropertySchema(id: 10, name: r'status', type: IsarType.string),
     r'transferId': PropertySchema(
-      id: 6,
+      id: 11,
       name: r'transferId',
       type: IsarType.string,
     ),
@@ -79,6 +100,18 @@ int _queuedTransferCollectionEstimateSize(
 ) {
   var bytesCount = offsets.last;
   bytesCount += 3 + object.fileId.length * 3;
+  {
+    final value = object.lastError;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.payloadJson;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.queueKey.length * 3;
   {
     final value = object.reason;
@@ -97,13 +130,18 @@ void _queuedTransferCollectionSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeDateTime(offsets[0], object.expiresAt);
-  writer.writeString(offsets[1], object.fileId);
-  writer.writeString(offsets[2], object.queueKey);
-  writer.writeDateTime(offsets[3], object.queuedAt);
-  writer.writeString(offsets[4], object.reason);
-  writer.writeString(offsets[5], object.status);
-  writer.writeString(offsets[6], object.transferId);
+  writer.writeLong(offsets[0], object.attemptCount);
+  writer.writeDateTime(offsets[1], object.expiresAt);
+  writer.writeString(offsets[2], object.fileId);
+  writer.writeString(offsets[3], object.lastError);
+  writer.writeDateTime(offsets[4], object.nextAttemptAt);
+  writer.writeString(offsets[5], object.payloadJson);
+  writer.writeLong(offsets[6], object.priority);
+  writer.writeString(offsets[7], object.queueKey);
+  writer.writeDateTime(offsets[8], object.queuedAt);
+  writer.writeString(offsets[9], object.reason);
+  writer.writeString(offsets[10], object.status);
+  writer.writeString(offsets[11], object.transferId);
 }
 
 QueuedTransferCollection _queuedTransferCollectionDeserialize(
@@ -113,14 +151,19 @@ QueuedTransferCollection _queuedTransferCollectionDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = QueuedTransferCollection();
-  object.expiresAt = reader.readDateTime(offsets[0]);
-  object.fileId = reader.readString(offsets[1]);
+  object.attemptCount = reader.readLong(offsets[0]);
+  object.expiresAt = reader.readDateTime(offsets[1]);
+  object.fileId = reader.readString(offsets[2]);
   object.id = id;
-  object.queueKey = reader.readString(offsets[2]);
-  object.queuedAt = reader.readDateTime(offsets[3]);
-  object.reason = reader.readStringOrNull(offsets[4]);
-  object.status = reader.readString(offsets[5]);
-  object.transferId = reader.readString(offsets[6]);
+  object.lastError = reader.readStringOrNull(offsets[3]);
+  object.nextAttemptAt = reader.readDateTimeOrNull(offsets[4]);
+  object.payloadJson = reader.readStringOrNull(offsets[5]);
+  object.priority = reader.readLong(offsets[6]);
+  object.queueKey = reader.readString(offsets[7]);
+  object.queuedAt = reader.readDateTime(offsets[8]);
+  object.reason = reader.readStringOrNull(offsets[9]);
+  object.status = reader.readString(offsets[10]);
+  object.transferId = reader.readString(offsets[11]);
   return object;
 }
 
@@ -132,18 +175,28 @@ P _queuedTransferCollectionDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readLong(offset)) as P;
     case 1:
-      return (reader.readString(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 2:
       return (reader.readString(offset)) as P;
     case 3:
-      return (reader.readDateTime(offset)) as P;
-    case 4:
       return (reader.readStringOrNull(offset)) as P;
+    case 4:
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 5:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 6:
+      return (reader.readLong(offset)) as P;
+    case 7:
+      return (reader.readString(offset)) as P;
+    case 8:
+      return (reader.readDateTime(offset)) as P;
+    case 9:
+      return (reader.readStringOrNull(offset)) as P;
+    case 10:
+      return (reader.readString(offset)) as P;
+    case 11:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -410,6 +463,77 @@ extension QueuedTransferCollectionQueryFilter
           QueuedTransferCollection,
           QFilterCondition
         > {
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  attemptCountEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'attemptCount', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  attemptCountGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'attemptCount',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  attemptCountLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'attemptCount',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  attemptCountBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'attemptCount',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
   QueryBuilder<
     QueuedTransferCollection,
     QueuedTransferCollection,
@@ -724,6 +848,588 @@ extension QueuedTransferCollectionQueryFilter
       return query.addFilterCondition(
         FilterCondition.between(
           property: r'id',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  lastErrorIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'lastError'),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  lastErrorIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'lastError'),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  lastErrorEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'lastError',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  lastErrorGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'lastError',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  lastErrorLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'lastError',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  lastErrorBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'lastError',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  lastErrorStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'lastError',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  lastErrorEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'lastError',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  lastErrorContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'lastError',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  lastErrorMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'lastError',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  lastErrorIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'lastError', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  lastErrorIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'lastError', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  nextAttemptAtIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'nextAttemptAt'),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  nextAttemptAtIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'nextAttemptAt'),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  nextAttemptAtEqualTo(DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'nextAttemptAt', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  nextAttemptAtGreaterThan(DateTime? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'nextAttemptAt',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  nextAttemptAtLessThan(DateTime? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'nextAttemptAt',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  nextAttemptAtBetween(
+    DateTime? lower,
+    DateTime? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'nextAttemptAt',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  payloadJsonIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'payloadJson'),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  payloadJsonIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'payloadJson'),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  payloadJsonEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'payloadJson',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  payloadJsonGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'payloadJson',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  payloadJsonLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'payloadJson',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  payloadJsonBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'payloadJson',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  payloadJsonStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'payloadJson',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  payloadJsonEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'payloadJson',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  payloadJsonContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'payloadJson',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  payloadJsonMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'payloadJson',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  payloadJsonIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'payloadJson', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  payloadJsonIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'payloadJson', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  priorityEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'priority', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  priorityGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'priority',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  priorityLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'priority',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    QueuedTransferCollection,
+    QueuedTransferCollection,
+    QAfterFilterCondition
+  >
+  priorityBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'priority',
           lower: lower,
           includeLower: includeLower,
           upper: upper,
@@ -1579,6 +2285,20 @@ extension QueuedTransferCollectionQuerySortBy
           QSortBy
         > {
   QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  sortByAttemptCount() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'attemptCount', Sort.asc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  sortByAttemptCountDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'attemptCount', Sort.desc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
   sortByExpiresAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'expiresAt', Sort.asc);
@@ -1603,6 +2323,62 @@ extension QueuedTransferCollectionQuerySortBy
   sortByFileIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'fileId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  sortByLastError() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastError', Sort.asc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  sortByLastErrorDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastError', Sort.desc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  sortByNextAttemptAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nextAttemptAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  sortByNextAttemptAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nextAttemptAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  sortByPayloadJson() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'payloadJson', Sort.asc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  sortByPayloadJsonDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'payloadJson', Sort.desc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  sortByPriority() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'priority', Sort.asc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  sortByPriorityDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'priority', Sort.desc);
     });
   }
 
@@ -1685,6 +2461,20 @@ extension QueuedTransferCollectionQuerySortThenBy
           QSortThenBy
         > {
   QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  thenByAttemptCount() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'attemptCount', Sort.asc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  thenByAttemptCountDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'attemptCount', Sort.desc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
   thenByExpiresAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'expiresAt', Sort.asc);
@@ -1723,6 +2513,62 @@ extension QueuedTransferCollectionQuerySortThenBy
   thenByIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'id', Sort.desc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  thenByLastError() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastError', Sort.asc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  thenByLastErrorDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastError', Sort.desc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  thenByNextAttemptAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nextAttemptAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  thenByNextAttemptAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nextAttemptAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  thenByPayloadJson() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'payloadJson', Sort.asc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  thenByPayloadJsonDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'payloadJson', Sort.desc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  thenByPriority() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'priority', Sort.asc);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QAfterSortBy>
+  thenByPriorityDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'priority', Sort.desc);
     });
   }
 
@@ -1805,6 +2651,13 @@ extension QueuedTransferCollectionQueryWhereDistinct
           QDistinct
         > {
   QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QDistinct>
+  distinctByAttemptCount() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'attemptCount');
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QDistinct>
   distinctByExpiresAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'expiresAt');
@@ -1815,6 +2668,34 @@ extension QueuedTransferCollectionQueryWhereDistinct
   distinctByFileId({bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'fileId', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QDistinct>
+  distinctByLastError({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'lastError', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QDistinct>
+  distinctByNextAttemptAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'nextAttemptAt');
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QDistinct>
+  distinctByPayloadJson({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'payloadJson', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, QueuedTransferCollection, QDistinct>
+  distinctByPriority() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'priority');
     });
   }
 
@@ -1867,6 +2748,13 @@ extension QueuedTransferCollectionQueryProperty
     });
   }
 
+  QueryBuilder<QueuedTransferCollection, int, QQueryOperations>
+  attemptCountProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'attemptCount');
+    });
+  }
+
   QueryBuilder<QueuedTransferCollection, DateTime, QQueryOperations>
   expiresAtProperty() {
     return QueryBuilder.apply(this, (query) {
@@ -1878,6 +2766,34 @@ extension QueuedTransferCollectionQueryProperty
   fileIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'fileId');
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, String?, QQueryOperations>
+  lastErrorProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'lastError');
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, DateTime?, QQueryOperations>
+  nextAttemptAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'nextAttemptAt');
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, String?, QQueryOperations>
+  payloadJsonProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'payloadJson');
+    });
+  }
+
+  QueryBuilder<QueuedTransferCollection, int, QQueryOperations>
+  priorityProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'priority');
     });
   }
 

@@ -1,11 +1,11 @@
 ---
-description: Tranzo offline-first transfer system — Clean Architecture, intent model, state machine, constraints (always read before adding or changing code).
+description: Tranzo offline-first transfer system — Clean Architecture, Supabase transfers, state machine, constraints (always read before adding or changing code).
 alwaysApply: true
 ---
 
 # Tranzo — production transfer system (mandatory)
 
-You are working on a **production-grade, scalable, offline-first file sharing system**. Follow this spec on **every** change that touches transfers, storage, network, or Firebase.
+You are working on a **production-grade, scalable, offline-first file sharing system**. Follow this spec on **every** change that touches transfers, storage, network, or Supabase.
 
 ## Non-negotiable architecture
 
@@ -17,11 +17,11 @@ Strict layer flow (never skip or merge layers):
 - **BLoC**: state + orchestration  
 - **UseCases**: business logic  
 - **Repository**: abstraction  
-- **Services**: Firebase / network / local DB (e.g. Isar)
+- **Services**: Supabase (Postgres + Storage + Realtime), network, local DB (Isar)
 
 Do **not** create new files unless absolutely necessary; prefer modifying the existing structure.
 
-Before writing code, **briefly state**: what you will do, **which layer** you touch, and **why**. Do not assume missing context — **ask** if unclear. Use only realistic Flutter / Firebase / Dart APIs (no invented APIs).
+Before writing code, **briefly state**: what you will do, **which layer** you touch, and **why**. Do not assume missing context — **ask** if unclear. Use only realistic Flutter / Supabase / Dart APIs (no invented APIs).
 
 ## System intent
 
@@ -29,28 +29,45 @@ This is **not** a simple file uploader. It is **intent-aware**, **offline-first*
 
 Core principle: **not all queued tasks should survive indefinitely.**
 
-## Transfer model (every transfer must include)
+## Transfer model (cloud `public.transfers`)
 
-- `transferId`, `senderId`, `receiverCode`
-- `fileName`, `fileSize`, `fileHash`
-- `status`, `storagePath`
-- `createdAt`, `expiresAt` (cloud TTL)
-- `intentExpiry` (short-term expiry metadata as designed in app)
-- `intentScore` (dynamic)
+Primary pipeline uses a **UUID** row in `public.transfers` with:
 
-## State machine (allowed states ONLY)
+- `id` (uuid), `sender_id`, `receiver_id`
+- `file_name`, `file_size`, `file_hash`, optional `mime_type`
+- `storage_root` (immutable): `transfers/{sender_id}/{id}`
+- `status`, `progress` (0–100), `total_chunks`, `uploaded_chunks`, `downloaded_chunks`
+- `created_at`, `updated_at`, optional `expires_at` / `intent_expiry` / `intent_score`
 
-Do **not** invent new states:
+**Storage** (bucket `transfer-chunks`): objects under  
+`transfers/{sender_id}/{transfer_uuid}/chunk_{index}` — **only the authenticated sender** may insert/update/delete; **sender and receiver** may read.
 
-`Initial` → `Pending` → `WaitingForNetwork` → `EvaluatingIntent` → `Uploading` → `Completed` | `Failed` | `Expired`
+Legacy `transfer_sessions` + older object paths may still exist for in-flight rows until fully migrated; **new sends** must use `transfers` + the path above.
 
-(Use exactly these names / semantics as implemented in code.)
+## State machine (allowed cloud states)
+
+Wire `status` on `public.transfers` (lowercase, CHECK-constrained):
+
+`queued` → `uploading` → `uploaded` → `downloading` → `completed` | `failed` | `cancelled`
+
+**Semantics**
+
+- **queued**: row inserted; chunks not required yet.
+- **uploading**: sender uploading chunks; `uploaded_chunks` / `progress` advance via RPC `report_chunk_uploaded`.
+- **uploaded**: all chunks in Storage; sender finished; receiver may download.
+- **downloading**: receiver downloading; `downloaded_chunks` / `progress` via `report_chunk_downloaded`.
+- **completed**: receiver verified hash and persisted file; `mark_transfer_completed` RPC.
+- **failed** / **cancelled**: terminal.
+
+Dart domain enum `TransferStatus` includes `queued` and `uploaded` plus legacy values (`pending`, etc.) for local history and migration.
+
+**Do not** mark sender-side cloud `completed` immediately after upload; **completed** means delivery + verification on the receiver path.
 
 ## Intent-aware logic (critical)
 
 - Do **not** use naive “time-only” expiry as the sole driver of whether work stays alive.
-- **`intentScore`** depends on: user retry actions, time elapsed, file size, network state, app foreground/background (as implemented).
-- **Expire / drop** queued or resumable work when **`intentScore` is below the configured threshold** (not only when a raw timer fires).
+- **`intent_score`** (when used on rows) depends on: user retry actions, time elapsed, file size, network state, app foreground/background (as implemented).
+- **Expire / drop** queued or resumable work when **`intent_score`** is below the configured threshold (not only when a raw timer fires).
 
 ## Retry system
 
@@ -69,21 +86,23 @@ Classify retries:
 
 - Do **not** upload large files on **mobile data** without explicit user confirmation (when the app enforces this).
 - **Pause** when there is no usable network.
-- **Resume** only if **intent is still valid** (`intentScore` / policy checks).
+- **Resume** only if **intent is still valid** (`intent_score` / policy checks).
 
 ## Offline storage (Isar)
 
-- Persist transfers locally.
-- **Clean stale entries** when appropriate, e.g. transfers that are **`Pending`** and have **low `intentScore`** (per product rules), so offline queues do not grow stale forever.
+- Persist transfers locally; `QueuedTransferCollection` may store `payloadJson`, `attemptCount`, `nextAttemptAt`, `lastError`, `priority` for offline signal replay and future outbound replay.
+- **Clean stale entries** when appropriate (per product rules) so offline queues do not grow stale forever.
 
-## Firebase
+## Supabase
 
-- Prefer **resumable** uploads.
-- Avoid chatty writes: **batch** where sensible; sync **meaningful** progress only (e.g. ~25%, 50%, …).
+- **Postgres**: `public.transfers` is the source of truth for lifecycle and progress; use **SECURITY DEFINER** RPCs for monotonic chunk counters where implemented.
+- **Realtime**: subscribe to `postgres_changes` on `public.transfers` for live `progress` / `status` (broadcast channels remain optional for wake-up).
+- **Storage**: chunk uploads must match RLS path; prefer **upsert** on chunk paths for idempotent retries where policy allows.
+- Avoid chatty writes: batch where sensible; progress is driven by **per-chunk RPC** or throttled updates as designed.
 
 ## Edge cases (always consider)
 
-App killed; network drop mid-upload; duplicate transfer; expired intent; low storage; permission denial.
+App killed; network drop mid-upload; duplicate transfer; expired intent; low storage; permission denial; RLS / JWT expiry (log and surface reauth).
 
 ## Code output discipline
 

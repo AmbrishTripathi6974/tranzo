@@ -41,7 +41,17 @@ class TransferHomePage extends StatelessWidget {
                   const SizedBox(height: 16),
                   BlocBuilder<TransferBloc, TransferState>(
                     builder: (context, state) {
-                      return TransferStatusCard(status: state.status);
+                      return TransferStatusCard(
+                        status: state.status,
+                        detailMessage: switch (state.status) {
+                          TransferStatus.error =>
+                            (state.errorMessage ?? state.uiWarningMessage),
+                          TransferStatus.receiverDeclined =>
+                            'They may have decided they did not need the file on '
+                                'their device. This is not a send failure.',
+                          _ => null,
+                        },
+                      );
                     },
                   ),
                   const SizedBox(height: 12),

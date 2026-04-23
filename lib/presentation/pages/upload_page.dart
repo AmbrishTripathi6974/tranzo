@@ -471,7 +471,9 @@ class _UploadFormState extends State<_UploadForm> {
                               canRemove: canEditSelection,
                               onRemove: () {
                                 context.read<TransferBloc>().add(
-                                  TransferUploadDraftFileRemoved(file.localPath),
+                                  TransferUploadDraftFileRemoved(
+                                    file.localPath,
+                                  ),
                                 );
                               },
                             );

@@ -260,6 +260,8 @@ const _TransferCollectionstatusEnumValueMap = {
   'completed': 3,
   'failed': 4,
   'cancelled': 5,
+  'queued': 6,
+  'uploaded': 7,
 };
 const _TransferCollectionstatusValueEnumMap = {
   0: TransferStatus.pending,
@@ -268,6 +270,8 @@ const _TransferCollectionstatusValueEnumMap = {
   3: TransferStatus.completed,
   4: TransferStatus.failed,
   5: TransferStatus.cancelled,
+  6: TransferStatus.queued,
+  7: TransferStatus.uploaded,
 };
 
 Id _transferCollectionGetId(TransferCollection object) {

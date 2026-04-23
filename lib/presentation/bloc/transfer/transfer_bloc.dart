@@ -456,12 +456,24 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       emit(state.copyWith(lifecycleSignalsByTransferId: nextSignals));
       return;
     }
+    if (event.signal.event == TransferLifecycleEventType.transferCompleted) {
+      emit(
+        state.copyWith(
+          lifecycleSignalsByTransferId: nextSignals,
+          status: TransferStatus.success,
+          clearErrorMessage: true,
+          clearUiWarningMessage: true,
+        ),
+      );
+      return;
+    }
     if (event.signal.event == TransferLifecycleEventType.transferRejected) {
       emit(
         state.copyWith(
           lifecycleSignalsByTransferId: nextSignals,
-          status: TransferStatus.error,
-          errorMessage: 'Receiver has not allowed this transfer.',
+          status: TransferStatus.receiverDeclined,
+          clearErrorMessage: true,
+          clearUiWarningMessage: true,
         ),
       );
       return;
@@ -473,19 +485,25 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     IncomingTransferReceived event,
     Emitter<TransferState> emit,
   ) {
-    final bool alreadyListed = state.incomingTransfers.any(
-      (item) => item.transferId == event.transfer.transferId,
+    final int existingIndex = state.incomingTransfers.indexWhere(
+      (IncomingTransferOffer item) =>
+          item.transferId == event.transfer.transferId,
     );
-    if (alreadyListed) {
-      return;
+    final List<IncomingTransferOffer> nextList =
+        List<IncomingTransferOffer>.from(state.incomingTransfers);
+    final bool isNewIncoming = existingIndex < 0;
+    if (existingIndex >= 0) {
+      nextList[existingIndex] = event.transfer;
+    } else {
+      nextList.add(event.transfer);
     }
     emit(
       state.copyWith(
-        incomingTransfers: <IncomingTransferOffer>[
-          ...state.incomingTransfers,
-          event.transfer,
-        ],
-        uiWarningMessage: 'Incoming transfer from ${event.transfer.senderId}.',
+        incomingTransfers: nextList,
+        uiWarningMessage: isNewIncoming
+            ? 'Incoming transfer from ${event.transfer.senderId}.'
+            : null,
+        clearUiWarningMessage: !isNewIncoming,
       ),
     );
   }
@@ -495,23 +513,49 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     Emitter<TransferState> emit,
   ) async {
     emit(
-      state.copyWith(status: TransferStatus.loading, clearErrorMessage: true),
+      state.copyWith(
+        status: TransferStatus.loading,
+        activeTransferId: event.transfer.transferId,
+        progress: 0,
+        clearErrorMessage: true,
+      ),
     );
     try {
       final PreparedIncomingTransferDecision decision =
           await _prepareIncomingTransfer(event.transfer);
+      String? mergedNotice = decision.uiWarningMessage?.trim();
+      if (mergedNotice != null && mergedNotice.isEmpty) {
+        mergedNotice = null;
+      }
       await _sendFiles.acceptIncoming(
         transfer: event.transfer,
         persistPermanently: decision.persistPermanently,
         trustSender: event.trustSender,
+        onDownloadProgress: (double progress) {
+          emit(
+            state.copyWith(
+              status: TransferStatus.loading,
+              activeTransferId: event.transfer.transferId,
+              progress: progress,
+              clearErrorMessage: true,
+            ),
+          );
+        },
+        onReceivedFileSaved: (String summary) {
+          mergedNotice = (mergedNotice == null || mergedNotice!.trim().isEmpty)
+              ? summary
+              : '${mergedNotice!.trim()}\n\n$summary';
+        },
       );
       emit(
         state.copyWith(
           status: TransferStatus.success,
+          progress: 1,
+          clearActiveTransferId: true,
           incomingTransfers: state.incomingTransfers
               .where((item) => item.transferId != event.transfer.transferId)
               .toList(growable: false),
-          uiWarningMessage: decision.uiWarningMessage,
+          uiWarningMessage: mergedNotice,
           showInAppProgress: decision.showInAppProgress,
         ),
       );
@@ -520,6 +564,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
         state.copyWith(
           status: TransferStatus.error,
           errorMessage: _toDisplayError(error),
+          clearActiveTransferId: true,
         ),
       );
     }
@@ -541,6 +586,9 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     } catch (error) {
       emit(
         state.copyWith(
+          incomingTransfers: state.incomingTransfers
+              .where((item) => item.transferId != event.transferId)
+              .toList(growable: false),
           status: TransferStatus.error,
           errorMessage: _toDisplayError(error),
         ),

@@ -1,6 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:developer' as developer;
 import 'dart:typed_data';
 
+import '../constants/app_constants.dart';
 import '../errors/exceptions.dart';
 
 /// Creates cloud-side transfer session rows.
@@ -12,11 +14,14 @@ class TransferService {
   final SupabaseClient _client;
 
   static const String _transferSessionsTable = 'transfer_sessions';
+  static const String _transfersV2Table = 'transfers';
   static const String _recipientCodesTable = 'recipient_codes';
   static const String _chunksBucket = 'transfer-chunks';
   static const String _insufficientRecipientCodePermissionCode = '42501';
   static const String _missingTransferSessionsHint =
       "Could not find the table 'public.transfer_sessions' in the schema cache";
+  static const String _missingTransfersV2Hint =
+      "Could not find the table 'public.transfers' in the schema cache";
   static const String _missingRecipientCodesHint =
       "Could not find the table 'public.recipient_codes' in the schema cache";
   static const String _storageObjectsRlsHint =
@@ -242,9 +247,13 @@ class TransferService {
   }) {
     final String message = exception.message;
     if (message.contains(_missingTransferSessionsHint) ||
+        message.contains(_missingTransfersV2Hint) ||
         message.contains(_missingRecipientCodesHint)) {
       return const AppException(
-        'Cloud transfer tables are missing in Supabase. Apply latest migrations and restart the app.',
+        'Cloud transfer tables are missing in Supabase. Apply migrations from '
+        'supabase/migrations (including 20260423120000_transfers_table_rls_rpc_realtime.sql '
+        'and 20260423120100_transfers_storage_rls_v2.sql), e.g. `supabase db push` or run the '
+        'SQL in the Supabase SQL editor, then restart the app.',
       );
     }
     if (_isRlsViolation(message)) {
@@ -364,6 +373,382 @@ class TransferService {
     final int nowEpochSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     return nowEpochSeconds >= (expiresAtEpochSeconds - 30);
   }
+
+  // --- Transfers v2 (UUID row + `transfers/{sender_id}/{id}/chunk_{n}` in Storage) ---
+
+  static String transfersV2ChunkObjectPath({
+    required String senderId,
+    required String transferUuid,
+    required int chunkIndex,
+  }) {
+    return 'transfers/$senderId/$transferUuid/chunk_$chunkIndex';
+  }
+
+  static int transfersV2TotalChunksForSize(int fileSizeBytes) {
+    final int chunk = AppConstants.defaultChunkSizeBytes;
+    return (fileSizeBytes + chunk - 1) ~/ chunk;
+  }
+
+  void _logTransfer(
+    String message, {
+    Map<String, Object?>? fields,
+    Object? error,
+  }) {
+    developer.log(message, name: 'transfer_v2', error: fields ?? error);
+  }
+
+  Future<TransfersV2Record> insertTransfersV2({
+    required String transferUuid,
+    required String senderId,
+    required String receiverId,
+    required String fileName,
+    required int fileSize,
+    required String fileHash,
+    String? mimeType,
+  }) async {
+    await _ensureSenderMatchesAuthenticated(senderId);
+    final int totalChunks = transfersV2TotalChunksForSize(fileSize);
+    final String storageRoot = 'transfers/$senderId/$transferUuid';
+    try {
+      final Map<String, dynamic> row = await _client
+          .from(_transfersV2Table)
+          .insert(<String, dynamic>{
+            'id': transferUuid,
+            'sender_id': senderId,
+            'receiver_id': receiverId,
+            'file_name': fileName,
+            'file_size': fileSize,
+            'file_hash': fileHash,
+            if (mimeType != null && mimeType.trim().isNotEmpty)
+              'mime_type': mimeType.trim(),
+            'storage_root': storageRoot,
+            'status': 'queued',
+            'total_chunks': totalChunks,
+          })
+          .select()
+          .single();
+      return TransfersV2Record.fromRow(row);
+    } on PostgrestException catch (e) {
+      _logTransfer(
+        'transfers_v2_insert_failed',
+        fields: <String, Object?>{
+          'message': e.message,
+          'code': e.code ?? '',
+          'isRls': _isRlsViolation(e.message),
+        },
+      );
+      throw _mapPostgrestException(
+        e,
+        fallbackMessage: 'Failed to create transfer.',
+      );
+    }
+  }
+
+  Future<void> updateTransfersV2Status({
+    required String transferUuid,
+    required String status,
+  }) async {
+    try {
+      await _client
+          .from(_transfersV2Table)
+          .update(<String, dynamic>{'status': status})
+          .eq('id', transferUuid);
+    } on PostgrestException catch (e) {
+      _logTransfer(
+        'transfers_v2_status_update_failed',
+        fields: <String, Object?>{
+          'transferId': transferUuid,
+          'status': status,
+          'isRls': _isRlsViolation(e.message),
+        },
+      );
+      throw _mapPostgrestException(
+        e,
+        fallbackMessage: 'Failed to update transfer status.',
+      );
+    }
+  }
+
+  Future<void> uploadTransfersV2Chunk({
+    required String senderId,
+    required String transferUuid,
+    required int chunkIndex,
+    required List<int> chunkBytes,
+  }) async {
+    final String objectPath = transfersV2ChunkObjectPath(
+      senderId: senderId,
+      transferUuid: transferUuid,
+      chunkIndex: chunkIndex,
+    );
+    try {
+      await _client.storage.from(_chunksBucket).uploadBinary(
+            objectPath,
+            Uint8List.fromList(chunkBytes),
+            fileOptions: const FileOptions(upsert: true),
+          );
+    } on StorageException catch (e) {
+      _logTransfer(
+        'transfers_v2_chunk_upload_storage_error',
+        fields: <String, Object?>{
+          'path': objectPath,
+          'chunkIndex': chunkIndex,
+          'isRls': e.message.toLowerCase().contains(_storageObjectsRlsHint),
+        },
+      );
+      if (_isRlsViolation(e.message) && await _tryRefreshSession()) {
+        try {
+          await _client.storage.from(_chunksBucket).uploadBinary(
+                objectPath,
+                Uint8List.fromList(chunkBytes),
+                fileOptions: const FileOptions(upsert: true),
+              );
+          return;
+        } on StorageException catch (retryError) {
+          throw _mapStorageException(
+            retryError,
+            fallbackMessage: 'Failed to upload transfer chunk.',
+          );
+        }
+      }
+      throw _mapStorageException(
+        e,
+        fallbackMessage: 'Failed to upload transfer chunk.',
+      );
+    }
+  }
+
+  Future<Uint8List> downloadTransfersV2Chunk({
+    required String senderId,
+    required String transferUuid,
+    required int chunkIndex,
+  }) async {
+    final String objectPath = transfersV2ChunkObjectPath(
+      senderId: senderId,
+      transferUuid: transferUuid,
+      chunkIndex: chunkIndex,
+    );
+    try {
+      return await _client.storage.from(_chunksBucket).download(objectPath);
+    } on StorageException catch (e) {
+      throw _mapStorageException(
+        e,
+        fallbackMessage: 'Failed to download transfer chunk.',
+      );
+    }
+  }
+
+  static const int transfersV2SignedUrlDefaultExpirySeconds = 3600;
+
+  /// Signed GET URL for a v2 chunk object (same access as [downloadTransfersV2Chunk]).
+  Future<String> createSignedUrlForTransfersV2Chunk({
+    required String senderId,
+    required String transferUuid,
+    required int chunkIndex,
+    int expiresInSeconds = transfersV2SignedUrlDefaultExpirySeconds,
+  }) async {
+    final String objectPath = transfersV2ChunkObjectPath(
+      senderId: senderId,
+      transferUuid: transferUuid,
+      chunkIndex: chunkIndex,
+    );
+    try {
+      return await _client.storage.from(_chunksBucket).createSignedUrl(
+        objectPath,
+        expiresInSeconds,
+      );
+    } on StorageException catch (e) {
+      if (_isRlsViolation(e.message) && await _tryRefreshSession()) {
+        try {
+          return await _client.storage.from(_chunksBucket).createSignedUrl(
+            objectPath,
+            expiresInSeconds,
+          );
+        } on StorageException catch (retryError) {
+          throw _mapStorageException(
+            retryError,
+            fallbackMessage: 'Failed to create signed URL for transfer chunk.',
+          );
+        }
+      }
+      throw _mapStorageException(
+        e,
+        fallbackMessage: 'Failed to create signed URL for transfer chunk.',
+      );
+    }
+  }
+
+  Future<void> rpcReportChunkUploaded({
+    required String transferUuid,
+    required int chunkIndex,
+  }) async {
+    try {
+      await _client.rpc<void>(
+        'report_chunk_uploaded',
+        params: <String, dynamic>{
+          'p_transfer_id': transferUuid,
+          'p_chunk_index': chunkIndex,
+        },
+      );
+    } on PostgrestException catch (e) {
+      _logTransfer(
+        'rpc_report_chunk_uploaded_failed',
+        fields: <String, Object?>{
+          'transferId': transferUuid,
+          'chunkIndex': chunkIndex,
+          'isRls': _isRlsViolation(e.message),
+        },
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> rpcMarkTransferUploaded({required String transferUuid}) async {
+    try {
+      await _client.rpc<void>(
+        'mark_transfer_uploaded',
+        params: <String, dynamic>{'p_transfer_id': transferUuid},
+      );
+    } on PostgrestException catch (e) {
+      _logTransfer(
+        'rpc_mark_transfer_uploaded_failed',
+        fields: <String, Object?>{
+          'transferId': transferUuid,
+          'isRls': _isRlsViolation(e.message),
+        },
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> rpcBeginTransferDownload({required String transferUuid}) async {
+    try {
+      await _client.rpc<void>(
+        'begin_transfer_download',
+        params: <String, dynamic>{'p_transfer_id': transferUuid},
+      );
+    } on PostgrestException catch (e) {
+      _logTransfer(
+        'rpc_begin_transfer_download_failed',
+        fields: <String, Object?>{
+          'transferId': transferUuid,
+          'isRls': _isRlsViolation(e.message),
+        },
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> rpcReportChunkDownloaded({
+    required String transferUuid,
+    required int chunkIndex,
+  }) async {
+    try {
+      await _client.rpc<void>(
+        'report_chunk_downloaded',
+        params: <String, dynamic>{
+          'p_transfer_id': transferUuid,
+          'p_chunk_index': chunkIndex,
+        },
+      );
+    } on PostgrestException catch (e) {
+      _logTransfer(
+        'rpc_report_chunk_downloaded_failed',
+        fields: <String, Object?>{
+          'transferId': transferUuid,
+          'chunkIndex': chunkIndex,
+          'message': e.message,
+        },
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> rpcMarkTransferCompleted({required String transferUuid}) async {
+    try {
+      await _client.rpc<void>(
+        'mark_transfer_completed',
+        params: <String, dynamic>{'p_transfer_id': transferUuid},
+      );
+    } on PostgrestException catch (e) {
+      _logTransfer(
+        'rpc_mark_transfer_completed_failed',
+        fields: <String, Object?>{
+          'transferId': transferUuid,
+          'message': e.message,
+        },
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> rpcMarkTransferFailed({
+    required String transferUuid,
+    required String message,
+  }) async {
+    try {
+      await _client.rpc<void>(
+        'mark_transfer_failed',
+        params: <String, dynamic>{
+          'p_transfer_id': transferUuid,
+          'p_message': message,
+        },
+      );
+    } on PostgrestException catch (_) {
+      // Best-effort terminal state.
+    }
+  }
+
+  Future<List<TransfersV2Record>> getIncomingTransfersV2(
+    String receiverId,
+  ) async {
+    try {
+      final List<dynamic> rows = await _client
+          .from(_transfersV2Table)
+          .select()
+          .eq('receiver_id', receiverId)
+          .inFilter('status', <String>[
+            'queued',
+            'uploading',
+            'uploaded',
+            'downloading',
+          ])
+          .order('created_at', ascending: false);
+      return rows
+          .map(
+            (dynamic row) =>
+                TransfersV2Record.fromRow(row as Map<String, dynamic>),
+          )
+          .toList(growable: false);
+    } on PostgrestException catch (e) {
+      throw _mapPostgrestException(
+        e,
+        fallbackMessage: 'Failed to load incoming transfers.',
+      );
+    }
+  }
+
+  Future<List<TransfersV2Record>> getParticipantTransfersV2(
+    String userId,
+  ) async {
+    try {
+      final List<dynamic> rows = await _client
+          .from(_transfersV2Table)
+          .select()
+          .or('receiver_id.eq.$userId,sender_id.eq.$userId')
+          .order('created_at', ascending: false);
+      return rows
+          .map(
+            (dynamic row) =>
+                TransfersV2Record.fromRow(row as Map<String, dynamic>),
+          )
+          .toList(growable: false);
+    } on PostgrestException catch (e) {
+      throw _mapPostgrestException(
+        e,
+        fallbackMessage: 'Failed to load transfer updates.',
+      );
+    }
+  }
 }
 
 final class TransferSessionPayload {
@@ -443,6 +828,54 @@ final class TransferSessionRecord {
     return TransferSessionRecord(
       id: id,
       transferId: transferId,
+      senderId: senderId,
+      receiverId: receiverId,
+      row: Map<String, dynamic>.from(row),
+    );
+  }
+}
+
+/// Row from `public.transfers` (UUID pipeline).
+final class TransfersV2Record {
+  const TransfersV2Record({
+    required this.id,
+    required this.senderId,
+    required this.receiverId,
+    required this.row,
+  });
+
+  final String id;
+  final String senderId;
+  final String receiverId;
+  final Map<String, dynamic> row;
+
+  String get status => (row['status'] as String? ?? '').trim();
+
+  int get progress => row['progress'] as int? ?? 0;
+
+  int get totalChunks => row['total_chunks'] as int? ?? 0;
+
+  int get uploadedChunks => row['uploaded_chunks'] as int? ?? 0;
+
+  int get downloadedChunks => row['downloaded_chunks'] as int? ?? 0;
+
+  String get fileName => row['file_name'] as String? ?? '';
+
+  int get fileSize => row['file_size'] as int? ?? 0;
+
+  String get fileHash => row['file_hash'] as String? ?? '';
+
+  String get storageRoot => row['storage_root'] as String? ?? '';
+
+  factory TransfersV2Record.fromRow(Map<String, dynamic> row) {
+    final String? id = row['id'] as String?;
+    final String? senderId = row['sender_id'] as String?;
+    final String? receiverId = row['receiver_id'] as String?;
+    if (id == null || senderId == null || receiverId == null) {
+      throw const AppException('Malformed transfers response.');
+    }
+    return TransfersV2Record(
+      id: id,
       senderId: senderId,
       receiverId: receiverId,
       row: Map<String, dynamic>.from(row),

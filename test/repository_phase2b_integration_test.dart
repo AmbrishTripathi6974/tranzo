@@ -167,7 +167,7 @@ Future<void> main() async {
             )
             .forEach(emitted.add);
 
-        expect(remoteDataSource.uploadChunkCalls, 0);
+        expect(remoteDataSource.uploadTransfersV2ChunkCalls, 0);
         expect(
           emitted.last.files.single.status,
           TransferFileProgressStatus.failed,
@@ -269,6 +269,22 @@ Future<void> main() async {
                 transferId: 't-signal-1',
                 senderId: 'sender-1',
                 receiverId: 'receiver-1',
+                status: 'queued',
+                fileId: 'file-signal',
+                fileName: 'payload.bin',
+                fileHash: 'hash-signal',
+              ),
+            ];
+
+        final Stream<TransferLifecycleSignalEntity> signals =
+            repository.listenTransferSignals(userId: 'sender-1');
+        await Future<void>.delayed(const Duration(milliseconds: 15));
+        transferService.participantRowsByUser['sender-1'] =
+            <TransferSessionRecord>[
+              _fakeTransferSession(
+                transferId: 't-signal-1',
+                senderId: 'sender-1',
+                receiverId: 'receiver-1',
                 status: 'completed',
                 fileId: 'file-signal',
                 fileName: 'payload.bin',
@@ -276,10 +292,9 @@ Future<void> main() async {
               ),
             ];
 
-        final TransferLifecycleSignalEntity signal = await repository
-            .listenTransferSignals(userId: 'sender-1')
+        final TransferLifecycleSignalEntity signal = await signals
             .first
-            .timeout(const Duration(seconds: 1));
+            .timeout(const Duration(seconds: 2));
         expect(signal.transferId, 't-signal-1');
         expect(signal.event, TransferLifecycleEventType.transferCompleted);
       },
@@ -360,6 +375,100 @@ class _FakeTransferService implements TransferService {
     required String fileId,
     required int chunkIndex,
   }) async => Uint8List(0);
+
+  @override
+  Future<TransfersV2Record> insertTransfersV2({
+    required String transferUuid,
+    required String senderId,
+    required String receiverId,
+    required String fileName,
+    required int fileSize,
+    required String fileHash,
+    String? mimeType,
+  }) async {
+    return TransfersV2Record.fromRow(<String, dynamic>{
+      'id': transferUuid,
+      'sender_id': senderId,
+      'receiver_id': receiverId,
+      'file_name': fileName,
+      'file_size': fileSize,
+      'file_hash': fileHash,
+      'storage_root': 'transfers/$senderId/$transferUuid',
+      'status': 'queued',
+      'progress': 0,
+      'total_chunks': 1,
+      'uploaded_chunks': 0,
+      'downloaded_chunks': 0,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  @override
+  Future<void> updateTransfersV2Status({
+    required String transferUuid,
+    required String status,
+  }) async {}
+
+  @override
+  Future<void> uploadTransfersV2Chunk({
+    required String senderId,
+    required String transferUuid,
+    required int chunkIndex,
+    required List<int> chunkBytes,
+  }) async {}
+
+  @override
+  Future<Uint8List> downloadTransfersV2Chunk({
+    required String senderId,
+    required String transferUuid,
+    required int chunkIndex,
+  }) async => Uint8List(0);
+
+  @override
+  Future<String> createSignedUrlForTransfersV2Chunk({
+    required String senderId,
+    required String transferUuid,
+    required int chunkIndex,
+    int expiresInSeconds = TransferService.transfersV2SignedUrlDefaultExpirySeconds,
+  }) async =>
+      'https://example.invalid/signed';
+
+  @override
+  Future<void> rpcReportChunkUploaded({
+    required String transferUuid,
+    required int chunkIndex,
+  }) async {}
+
+  @override
+  Future<void> rpcMarkTransferUploaded({required String transferUuid}) async {}
+
+  @override
+  Future<void> rpcBeginTransferDownload({required String transferUuid}) async {}
+
+  @override
+  Future<void> rpcReportChunkDownloaded({
+    required String transferUuid,
+    required int chunkIndex,
+  }) async {}
+
+  @override
+  Future<void> rpcMarkTransferCompleted({required String transferUuid}) async {}
+
+  @override
+  Future<void> rpcMarkTransferFailed({
+    required String transferUuid,
+    required String message,
+  }) async {}
+
+  @override
+  Future<List<TransfersV2Record>> getIncomingTransfersV2(
+    String receiverId,
+  ) async => const <TransfersV2Record>[];
+
+  @override
+  Future<List<TransfersV2Record>> getParticipantTransfersV2(
+    String userId,
+  ) async => const <TransfersV2Record>[];
 }
 
 class _FakeRealtimeService implements RealtimeService {
@@ -401,6 +510,11 @@ class _FakeRealtimeService implements RealtimeService {
     String channelName = 'incoming-transfers',
     String event = 'incoming_transfer',
   }) => const Stream<Map<String, dynamic>>.empty();
+
+  @override
+  Stream<Map<String, dynamic>> listenTransfersV2Postgres({
+    required String userId,
+  }) => const Stream<Map<String, dynamic>>.empty();
 }
 
 TransferSessionRecord _fakeTransferSession({
@@ -429,6 +543,7 @@ TransferSessionRecord _fakeTransferSession({
 
 class _FakeRemoteDataSource implements TransferRemoteDataSource {
   int uploadChunkCalls = 0;
+  int uploadTransfersV2ChunkCalls = 0;
   final Completer<String> firstChunkTransferId = Completer<String>();
   final Completer<void> allowFirstChunk = Completer<void>();
 
@@ -459,6 +574,40 @@ class _FakeRemoteDataSource implements TransferRemoteDataSource {
     required String fileId,
     required int chunkIndex,
   }) async => <int>[];
+
+  @override
+  Future<void> uploadTransfersV2Chunk({
+    required String senderId,
+    required String transferUuid,
+    required int chunkIndex,
+    required Stream<List<int>> byteStream,
+  }) async {
+    uploadTransfersV2ChunkCalls += 1;
+    await byteStream.drain<void>();
+    if (uploadTransfersV2ChunkCalls == 1) {
+      firstChunkTransferId.complete(transferUuid);
+      await allowFirstChunk.future;
+    }
+  }
+
+  @override
+  Future<List<int>> downloadTransfersV2Chunk({
+    required String senderId,
+    required String transferUuid,
+    required int chunkIndex,
+  }) async => <int>[];
+
+  @override
+  Future<void> downloadFromSignedUrlToFile({
+    required String signedUrl,
+    required String destinationPath,
+    void Function(int received, int total)? onReceiveProgress,
+  }) async {
+    final File out = File(destinationPath);
+    await out.parent.create(recursive: true);
+    await out.writeAsBytes(const <int>[]);
+    onReceiveProgress?.call(0, 0);
+  }
 }
 
 class _FakeBackgroundRuntimeService

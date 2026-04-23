@@ -409,6 +409,20 @@ class _StatusCapsule extends StatelessWidget {
           foreground: Color(0xFF00695C),
           border: Color(0xFFB2DFDB),
         );
+      case TransferStatus.queued:
+        return const _StatusStyle(
+          label: 'Queued',
+          background: Color(0xFFECEFF1),
+          foreground: Color(0xFF455A64),
+          border: Color(0xFFCFD8DC),
+        );
+      case TransferStatus.uploaded:
+        return const _StatusStyle(
+          label: 'Ready',
+          background: Color(0xFFE8EAF6),
+          foreground: Color(0xFF283593),
+          border: Color(0xFFC5CAE9),
+        );
     }
   }
 }

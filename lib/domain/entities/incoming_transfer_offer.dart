@@ -15,6 +15,9 @@ class IncomingTransferOffer extends Equatable {
     required this.createdAt,
     this.trustStatus = SenderTrustStatus.unknown,
     this.requiresApproval = true,
+    this.cloudProgressPercent,
+    this.cloudStatus,
+    this.usesTransfersV2 = false,
   });
 
   final String transferId;
@@ -28,6 +31,43 @@ class IncomingTransferOffer extends Equatable {
   final DateTime createdAt;
   final SenderTrustStatus trustStatus;
   final bool requiresApproval;
+  final int? cloudProgressPercent;
+  final String? cloudStatus;
+  final bool usesTransfersV2;
+
+  IncomingTransferOffer copyWith({
+    String? transferId,
+    String? senderId,
+    String? receiverId,
+    String? fileId,
+    String? fileName,
+    int? fileSize,
+    String? fileHash,
+    String? storagePath,
+    DateTime? createdAt,
+    SenderTrustStatus? trustStatus,
+    bool? requiresApproval,
+    int? cloudProgressPercent,
+    String? cloudStatus,
+    bool? usesTransfersV2,
+  }) {
+    return IncomingTransferOffer(
+      transferId: transferId ?? this.transferId,
+      senderId: senderId ?? this.senderId,
+      receiverId: receiverId ?? this.receiverId,
+      fileId: fileId ?? this.fileId,
+      fileName: fileName ?? this.fileName,
+      fileSize: fileSize ?? this.fileSize,
+      fileHash: fileHash ?? this.fileHash,
+      storagePath: storagePath ?? this.storagePath,
+      createdAt: createdAt ?? this.createdAt,
+      trustStatus: trustStatus ?? this.trustStatus,
+      requiresApproval: requiresApproval ?? this.requiresApproval,
+      cloudProgressPercent: cloudProgressPercent ?? this.cloudProgressPercent,
+      cloudStatus: cloudStatus ?? this.cloudStatus,
+      usesTransfersV2: usesTransfersV2 ?? this.usesTransfersV2,
+    );
+  }
 
   @override
   List<Object?> get props => <Object?>[
@@ -42,5 +82,8 @@ class IncomingTransferOffer extends Equatable {
     createdAt,
     trustStatus,
     requiresApproval,
+    cloudProgressPercent,
+    cloudStatus,
+    usesTransfersV2,
   ];
 }

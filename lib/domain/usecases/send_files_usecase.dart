@@ -50,11 +50,15 @@ class SendFiles {
     required IncomingTransferOffer transfer,
     bool persistPermanently = true,
     bool trustSender = false,
+    void Function(double progress)? onDownloadProgress,
+    void Function(String summary)? onReceivedFileSaved,
   }) {
     return _repository.acceptIncomingTransfer(
       transfer: transfer,
       persistPermanently: persistPermanently,
       trustSender: trustSender,
+      onDownloadProgress: onDownloadProgress,
+      onReceivedFileSaved: onReceivedFileSaved,
     );
   }
 
