@@ -27,6 +27,7 @@ import '../../core/services/realtime_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/services/transfer_service.dart';
 import '../../core/services/background_transfer_runtime_service.dart';
+import '../../core/services/android_downloads_exporter.dart';
 import '../../core/services/received_file_save_location.dart';
 import '../../core/services/received_gallery_exporter.dart';
 import 'package:dio/dio.dart';
@@ -855,13 +856,21 @@ class TransferRepositoryImpl implements TransferRepository {
       finalFileRenamedToTarget = true;
 
       if (persistPermanently) {
+        final bool addedToDownloads = await tryStoreReceivedFileInAndroidDownloads(
+          File(target.path),
+          fileName: transfer.fileName,
+        );
         final bool addedToGallery = await tryExportReceivedMediaToPhotoLibrary(
           File(target.path),
           transfer.fileName,
         );
         final String locationLabel = describeReceivedSaveLocation(appDir);
-        final String summary = addedToGallery
+        final String summary = addedToGallery && addedToDownloads
+            ? 'Saved to Downloads/Tranzo and also to your Photos library (album Tranzo).'
+            : addedToGallery
             ? 'Also saved to your Photos library (album Tranzo). File copy: $locationLabel.'
+            : addedToDownloads
+            ? 'Saved to Downloads/Tranzo.'
             : 'Saved to $locationLabel.';
         onReceivedFileSaved?.call(summary);
       }
