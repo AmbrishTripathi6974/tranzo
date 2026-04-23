@@ -473,15 +473,6 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     IncomingTransferReceived event,
     Emitter<TransferState> emit,
   ) {
-    if (!event.transfer.requiresApproval) {
-      add(IncomingTransferAccepted(event.transfer));
-      emit(
-        state.copyWith(
-          uiWarningMessage: 'Auto-accepted transfer from trusted sender.',
-        ),
-      );
-      return;
-    }
     final bool alreadyListed = state.incomingTransfers.any(
       (item) => item.transferId == event.transfer.transferId,
     );
@@ -567,6 +558,13 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
         normalized.contains('recipient_codes');
     if (isRecipientCodePermissionIssue) {
       return 'Cloud pairing is unavailable right now. Please reopen the app and try again.';
+    }
+    final bool isStoragePolicyBlocked =
+        normalized.contains('storage policy blocked upload') ||
+        (normalized.contains('row-level security policy') &&
+            normalized.contains('storage'));
+    if (isStoragePolicyBlocked) {
+      return 'Cloud upload is not authorized for this account right now. Reopen the app (or sign in again) and retry.';
     }
     if (error is AppException) {
       return raw;

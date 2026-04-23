@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../domain/entities/transfer_lifecycle_signal.dart';
 import '../bloc/transfer/transfer_bloc.dart';
 import '../bloc/transfer/transfer_event.dart';
 import '../bloc/transfer/transfer_state.dart';
@@ -34,119 +35,181 @@ class _DownloadPageState extends State<DownloadPage> {
                       const SizedBox(height: 12),
                   itemBuilder: (BuildContext context, int index) {
                     final transfer = state.incomingTransfers[index];
+                    final bool isActiveDownload =
+                        state.status == TransferStatus.loading &&
+                        state.activeTransferId == transfer.transferId;
+                    final double progressValue = state.progress.clamp(0.0, 1.0);
+                    final String statusLabel = _statusLabelForTransfer(
+                      state: state,
+                      transferId: transfer.transferId,
+                      isActiveDownload: isActiveDownload,
+                    );
                     return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            Text(
-                              transfer.fileName,
-                              style: Theme.of(context).textTheme.titleMedium,
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: Text(
+                                    transfer.fileName,
+                                    style: Theme.of(context).textTheme.titleMedium,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.secondaryContainer,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    statusLabel,
+                                    style: Theme.of(context).textTheme.labelMedium,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 6),
-                            Text('From: ${transfer.senderId}'),
+                            const SizedBox(height: 8),
+                            Text(
+                              'From: ${transfer.senderId}',
+                            ),
                             Text('${transfer.fileSize} bytes'),
+                            if (isActiveDownload) ...<Widget>[
+                              const SizedBox(height: 10),
+                              LinearProgressIndicator(value: progressValue),
+                              const SizedBox(height: 6),
+                              Text(
+                                '${(progressValue * 100).toStringAsFixed(0)}% downloading',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
                             const SizedBox(height: 10),
                             Row(
                               children: <Widget>[
-                                FilledButton(
-                                  onPressed: () async {
-                                    final TransferBloc transferBloc = context
-                                        .read<TransferBloc>();
-                                    if (transfer.requiresApproval) {
-                                      bool trustSender = false;
-                                      final bool?
-                                      allow = await showDialog<bool>(
-                                        context: context,
-                                        builder: (BuildContext dialogContext) {
-                                          return StatefulBuilder(
-                                            builder: (BuildContext context, setState) {
-                                              return AlertDialog(
-                                                title: const Text(
-                                                  'Allow transfer?',
-                                                ),
-                                                content: Column(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: <Widget>[
-                                                    Text(
-                                                      'Allow file from ${transfer.senderId}?',
+                                Expanded(
+                                  child: FilledButton(
+                                    onPressed: isActiveDownload
+                                        ? null
+                                        : () async {
+                                            final TransferBloc transferBloc =
+                                                context.read<TransferBloc>();
+                                            if (transfer.requiresApproval) {
+                                              bool trustSender = false;
+                                              final bool? allow =
+                                                  await showDialog<bool>(
+                                                    context: context,
+                                                    builder: (
+                                                      BuildContext dialogContext,
+                                                    ) {
+                                                      return StatefulBuilder(
+                                                        builder: (
+                                                          BuildContext context,
+                                                          setState,
+                                                        ) {
+                                                          return AlertDialog(
+                                                            title: const Text(
+                                                              'Allow transfer?',
+                                                            ),
+                                                            content: Column(
+                                                              mainAxisSize:
+                                                                  MainAxisSize
+                                                                      .min,
+                                                              children: <Widget>[
+                                                                Text(
+                                                                  'Allow file from ${transfer.senderId}?',
+                                                                ),
+                                                                CheckboxListTile(
+                                                                  value:
+                                                                      trustSender,
+                                                                  onChanged: (
+                                                                    bool? value,
+                                                                  ) {
+                                                                    setState(() {
+                                                                      trustSender =
+                                                                          value ??
+                                                                          false;
+                                                                    });
+                                                                  },
+                                                                  title: const Text(
+                                                                    'Trust this sender',
+                                                                  ),
+                                                                  controlAffinity:
+                                                                      ListTileControlAffinity
+                                                                          .leading,
+                                                                  contentPadding:
+                                                                      EdgeInsets.zero,
+                                                                ),
+                                                              ],
+                                                            ),
+                                                            actions: <Widget>[
+                                                              TextButton(
+                                                                onPressed: () => Navigator.of(
+                                                                  dialogContext,
+                                                                ).pop(false),
+                                                                child: const Text(
+                                                                  'Cancel',
+                                                                ),
+                                                              ),
+                                                              FilledButton(
+                                                                onPressed: () => Navigator.of(
+                                                                  dialogContext,
+                                                                ).pop(true),
+                                                                child: const Text(
+                                                                  'Download',
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          );
+                                                        },
+                                                      );
+                                                    },
+                                                  );
+                                              if (allow != true || !mounted) {
+                                                if (allow == false) {
+                                                  transferBloc.add(
+                                                    IncomingTransferRejected(
+                                                      transfer.transferId,
                                                     ),
-                                                    CheckboxListTile(
-                                                      value: trustSender,
-                                                      onChanged: (bool? value) {
-                                                        setState(() {
-                                                          trustSender =
-                                                              value ?? false;
-                                                        });
-                                                      },
-                                                      title: const Text(
-                                                        'Trust this sender',
-                                                      ),
-                                                      controlAffinity:
-                                                          ListTileControlAffinity
-                                                              .leading,
-                                                      contentPadding:
-                                                          EdgeInsets.zero,
-                                                    ),
-                                                  ],
+                                                  );
+                                                }
+                                                return;
+                                              }
+                                              transferBloc.add(
+                                                IncomingTransferAccepted(
+                                                  transfer,
+                                                  trustSender: trustSender,
                                                 ),
-                                                actions: <Widget>[
-                                                  TextButton(
-                                                    onPressed: () =>
-                                                        Navigator.of(
-                                                          dialogContext,
-                                                        ).pop(false),
-                                                    child: const Text('Deny'),
-                                                  ),
-                                                  FilledButton(
-                                                    onPressed: () =>
-                                                        Navigator.of(
-                                                          dialogContext,
-                                                        ).pop(true),
-                                                    child: const Text('Allow'),
-                                                  ),
-                                                ],
                                               );
-                                            },
-                                          );
-                                        },
-                                      );
-                                      if (allow != true || !mounted) {
-                                        if (allow == false) {
-                                          transferBloc.add(
-                                            IncomingTransferRejected(
-                                              transfer.transferId,
-                                            ),
-                                          );
-                                        }
-                                        return;
-                                      }
-                                      transferBloc.add(
-                                        IncomingTransferAccepted(
-                                          transfer,
-                                          trustSender: trustSender,
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    transferBloc.add(
-                                      IncomingTransferAccepted(transfer),
-                                    );
-                                  },
-                                  child: const Text('Accept'),
+                                              return;
+                                            }
+                                            transferBloc.add(
+                                              IncomingTransferAccepted(transfer),
+                                            );
+                                          },
+                                    child: const Text('Download'),
+                                  ),
                                 ),
                                 const SizedBox(width: 8),
-                                FilledButton.tonal(
-                                  onPressed: () {
-                                    context.read<TransferBloc>().add(
-                                      IncomingTransferRejected(
-                                        transfer.transferId,
-                                      ),
-                                    );
-                                  },
-                                  child: const Text('Reject'),
+                                Expanded(
+                                  child: FilledButton.tonal(
+                                    onPressed: isActiveDownload
+                                        ? null
+                                        : () {
+                                            context.read<TransferBloc>().add(
+                                              IncomingTransferRejected(
+                                                transfer.transferId,
+                                              ),
+                                            );
+                                          },
+                                    child: const Text('Cancel'),
+                                  ),
                                 ),
                               ],
                             ),
@@ -162,5 +225,31 @@ class _DownloadPageState extends State<DownloadPage> {
         },
       ),
     );
+  }
+
+  String _statusLabelForTransfer({
+    required TransferState state,
+    required String transferId,
+    required bool isActiveDownload,
+  }) {
+    if (isActiveDownload) {
+      return 'Downloading';
+    }
+    final signal = state.lifecycleSignalsByTransferId[transferId];
+    if (signal == null) {
+      return 'Pending';
+    }
+    switch (signal.event) {
+      case TransferLifecycleEventType.transferCompleted:
+        return 'Downloaded';
+      case TransferLifecycleEventType.transferFailed:
+        return 'Failed';
+      case TransferLifecycleEventType.transferRejected:
+        return 'Cancelled';
+      case TransferLifecycleEventType.transferAccepted:
+        return 'Pending';
+      case TransferLifecycleEventType.transferStarted:
+        return 'Pending';
+    }
   }
 }

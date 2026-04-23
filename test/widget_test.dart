@@ -88,7 +88,7 @@ void main() {
     await bloc.close();
   });
 
-  test('Trusted sender is auto-accepted', () async {
+  test('Trusted sender appears in incoming list without auto-accept', () async {
     final TransferBloc bloc = _buildTransferBloc();
     final IncomingTransferOffer incoming = _sampleIncomingTransfer(
       requiresApproval: false,
@@ -97,7 +97,12 @@ void main() {
     bloc.add(IncomingTransferReceived(incoming));
     await Future<void>.delayed(Duration.zero);
 
-    expect(bloc.state.uiWarningMessage, contains('Auto-accepted transfer'));
+    expect(bloc.state.incomingTransfers, hasLength(1));
+    expect(bloc.state.incomingTransfers.first.requiresApproval, isFalse);
+    expect(
+      bloc.state.uiWarningMessage,
+      'Incoming transfer from ${incoming.senderId}.',
+    );
     await bloc.close();
   });
 }

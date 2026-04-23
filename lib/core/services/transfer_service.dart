@@ -250,6 +250,7 @@ class TransferService {
     if (_isRlsViolation(message)) {
       return const AppException(
         'Cloud session is not authorized for transfer writes. Re-authenticate and retry.',
+        code: AppErrorCode.invalidRecipientCode,
       );
     }
     return AppException(message.isEmpty ? fallbackMessage : message);
@@ -273,6 +274,7 @@ class TransferService {
     if (message.toLowerCase().contains(_storageObjectsRlsHint)) {
       return const AppException(
         'Cloud storage policy blocked upload. Verify transfer storage policies and sender session, then retry.',
+        code: AppErrorCode.invalidRecipientCode,
       );
     }
     return AppException(message.isEmpty ? fallbackMessage : message);

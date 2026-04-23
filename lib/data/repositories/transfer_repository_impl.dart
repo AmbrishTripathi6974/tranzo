@@ -699,7 +699,9 @@ class TransferRepositoryImpl implements TransferRepository {
       await _downloadManager.finalizeSession(transfer.transferId);
       await _localDataSource.clearTransferProgress(transfer.transferId);
       _clearRetryState(transfer.transferId);
-      await _backgroundRuntimeService.cancelRetry(transferId: transfer.transferId);
+      await _backgroundRuntimeService.cancelRetry(
+        transferId: transfer.transferId,
+      );
     } on AppException catch (error) {
       await _scheduleBackgroundRetryIfRecoverable(
         transferId: transfer.transferId,
