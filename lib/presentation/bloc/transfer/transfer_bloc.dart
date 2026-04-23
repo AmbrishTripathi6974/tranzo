@@ -149,7 +149,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
           status: TransferStatus.error,
           errorMessage: showInlineError ? displayError : null,
           clearErrorMessage: !showInlineError,
-          uiWarningMessage: displayError,
+          uiWarningMessage: showInlineError ? displayError : null,
         ),
       );
     }
@@ -190,7 +190,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
           status: TransferStatus.error,
           errorMessage: showInlineError ? displayError : null,
           clearErrorMessage: !showInlineError,
-          uiWarningMessage: displayError,
+          uiWarningMessage: showInlineError ? displayError : null,
         ),
       );
     }
@@ -396,7 +396,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
             errorMessage: showInlineError ? allFailedDisplayMessage : null,
             clearErrorMessage: !showInlineError,
             uiWarningMessage: allFailed
-                ? allFailedDisplayMessage
+                ? (showInlineError ? allFailedDisplayMessage : null)
                 : (hasPartialFailures
                       ? 'Some files failed to upload. Review file statuses and retry.'
                       : null),
@@ -419,7 +419,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
           status: TransferStatus.error,
           errorMessage: showInlineError ? displayError : null,
           clearErrorMessage: !showInlineError,
-          uiWarningMessage: displayError,
+          uiWarningMessage: showInlineError ? displayError : null,
         ),
       );
     }
@@ -585,7 +585,7 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
           status: TransferStatus.error,
           errorMessage: showInlineError ? displayError : null,
           clearErrorMessage: !showInlineError,
-          uiWarningMessage: displayError,
+          uiWarningMessage: showInlineError ? displayError : null,
           clearActiveTransferId: true,
         ),
       );
@@ -635,6 +635,9 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
     }
     final String normalized = displayMessage.toLowerCase();
     if (normalized.contains('disconnected from the network') ||
+        normalized.contains('connection issue detected') ||
+        normalized.contains('retry automatically') ||
+        normalized.contains('network is slow right now') ||
         normalized.contains('timed out') ||
         normalized.contains('connection is unstable') ||
         normalized.contains('queued to retry') ||

@@ -6,11 +6,15 @@ class TransferStatusCard extends StatelessWidget {
   const TransferStatusCard({
     super.key,
     required this.status,
+    this.isOffline = false,
+    this.isReconnected = false,
     this.detailMessage,
     this.onDetailTap,
   });
 
   final TransferStatus status;
+  final bool isOffline;
+  final bool isReconnected;
   final String? detailMessage;
   final VoidCallback? onDetailTap;
 
@@ -20,6 +24,8 @@ class TransferStatusCard extends StatelessWidget {
     final _StatusPresentation presentation = _presentationFor(
       status,
       theme.colorScheme,
+      isOffline: isOffline,
+      isReconnected: isReconnected,
     );
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -66,12 +72,7 @@ class TransferStatusCard extends StatelessWidget {
                         maxLines: 4,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: switch (status) {
-                            TransferStatus.error => theme.colorScheme.error,
-                            TransferStatus.receiverDeclined =>
-                              theme.colorScheme.onSurfaceVariant,
-                            _ => theme.colorScheme.onSurfaceVariant,
-                          },
+                          color: presentation.detailForeground,
                         ),
                       ),
                     ),
@@ -92,18 +93,41 @@ class _StatusPresentation {
     required this.icon,
     required this.iconBackground,
     required this.iconForeground,
+    required this.detailForeground,
   });
 
   final String title;
   final IconData icon;
   final Color iconBackground;
   final Color iconForeground;
+  final Color detailForeground;
 }
 
 _StatusPresentation _presentationFor(
   TransferStatus status,
-  ColorScheme colorScheme,
-) {
+  ColorScheme colorScheme, {
+  required bool isOffline,
+  required bool isReconnected,
+}) {
+  if (isOffline) {
+    return _StatusPresentation(
+      title: 'You are offline',
+      icon: Icons.wifi_off_outlined,
+      iconBackground: Colors.orange.shade50,
+      iconForeground: Colors.orange.shade900,
+      detailForeground: Colors.orange.shade900,
+    );
+  }
+  if (isReconnected) {
+    return _StatusPresentation(
+      title: 'Now you are online, try again',
+      icon: Icons.wifi_outlined,
+      iconBackground: Colors.green.shade50,
+      iconForeground: Colors.green.shade800,
+      detailForeground: Colors.green.shade800,
+    );
+  }
+
   switch (status) {
     case TransferStatus.initial:
       return _StatusPresentation(
@@ -111,6 +135,7 @@ _StatusPresentation _presentationFor(
         icon: Icons.outgoing_mail,
         iconBackground: colorScheme.primaryContainer,
         iconForeground: colorScheme.onPrimaryContainer,
+        detailForeground: colorScheme.onSurfaceVariant,
       );
     case TransferStatus.loading:
       return _StatusPresentation(
@@ -118,6 +143,7 @@ _StatusPresentation _presentationFor(
         icon: Icons.sync,
         iconBackground: colorScheme.secondaryContainer,
         iconForeground: colorScheme.onSecondaryContainer,
+        detailForeground: colorScheme.onSurfaceVariant,
       );
     case TransferStatus.success:
       return _StatusPresentation(
@@ -125,6 +151,7 @@ _StatusPresentation _presentationFor(
         icon: Icons.check_circle_outline,
         iconBackground: Colors.green.shade50,
         iconForeground: Colors.green.shade800,
+        detailForeground: colorScheme.onSurfaceVariant,
       );
     case TransferStatus.error:
       return _StatusPresentation(
@@ -132,6 +159,7 @@ _StatusPresentation _presentationFor(
         icon: Icons.error_outline,
         iconBackground: Colors.red.shade50,
         iconForeground: Colors.red.shade800,
+        detailForeground: Colors.red.shade800,
       );
     case TransferStatus.receiverDeclined:
       return _StatusPresentation(
@@ -139,6 +167,7 @@ _StatusPresentation _presentationFor(
         icon: Icons.info_outline,
         iconBackground: Colors.amber.shade50,
         iconForeground: Colors.amber.shade900,
+        detailForeground: colorScheme.onSurfaceVariant,
       );
   }
 }

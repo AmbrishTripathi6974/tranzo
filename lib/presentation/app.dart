@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 
+import '../core/network/network_info.dart';
 import '../di/injection_container.dart';
 import 'bloc/auth/auth_bloc.dart';
 import 'bloc/auth/auth_event.dart';
@@ -16,7 +19,7 @@ import 'bloc/transfer/transfer_state.dart';
 import 'navigation/app_router.dart';
 import 'pages/auth_gate_page.dart';
 
-class App extends StatelessWidget {
+class App extends StatefulWidget {
   const App({super.key});
 
   static final GlobalKey<ScaffoldMessengerState> _messengerKey =
@@ -42,6 +45,95 @@ class App extends StatelessWidget {
   }
 
   @override
+  State<App> createState() => _AppState();
+}
+
+class _AppState extends State<App> {
+  StreamSubscription<NetworkConnectionType>? _networkSubscription;
+  NetworkConnectionType? _previousConnectionType;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeConnectivityToasts();
+  }
+
+  Future<void> _initializeConnectivityToasts() async {
+    final NetworkInfo networkInfo = sl<NetworkInfo>();
+    _previousConnectionType = await networkInfo.connectionType;
+    _networkSubscription = networkInfo.onConnectionChanged.listen(
+      _onConnectivityChanged,
+    );
+  }
+
+  void _onConnectivityChanged(NetworkConnectionType currentType) {
+    final NetworkConnectionType? previousType = _previousConnectionType;
+    _previousConnectionType = currentType;
+    if (previousType == null || previousType == currentType) {
+      return;
+    }
+
+    if (currentType == NetworkConnectionType.none) {
+      _showConnectivityToast(message: 'You are offline', isBackOnline: false);
+      return;
+    }
+
+    if (previousType == NetworkConnectionType.none) {
+      _showConnectivityToast(
+        message: 'You are back online',
+        isBackOnline: true,
+      );
+    }
+  }
+
+  void _showConnectivityToast({
+    required String message,
+    required bool isBackOnline,
+  }) {
+    final IconData leadingIcon = isBackOnline
+        ? Icons.wifi_outlined
+        : Icons.wifi_off_outlined;
+    final SnackBar snackBar = SnackBar(
+      content: Row(
+        children: <Widget>[
+          Icon(leadingIcon, color: Colors.white, size: 18),
+          const SizedBox(width: 10),
+          Text(message, style: const TextStyle(color: Colors.white)),
+        ],
+      ),
+      behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      backgroundColor: const Color(0xFF2D2D2D),
+      duration: isBackOnline
+          ? const Duration(seconds: 2)
+          : const Duration(seconds: 4),
+    );
+
+    final ScaffoldMessengerState? messenger = App._messengerKey.currentState;
+    if (messenger != null) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(snackBar);
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ScaffoldMessengerState? fallbackMessenger =
+          App._messengerKey.currentState;
+      fallbackMessenger
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(snackBar);
+    });
+  }
+
+  @override
+  void dispose() {
+    _networkSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MultiBlocProvider(
       providers: <BlocProvider<dynamic>>[
@@ -61,7 +153,7 @@ class App extends StatelessWidget {
                     current.activeAction != AuthAction.bootstrap;
               },
               listener: (BuildContext context, AuthState state) async {
-                await _removeNativeSplashWhenReady();
+                await App._removeNativeSplashWhenReady();
               },
             ),
             BlocListener<AuthBloc, AuthState>(
@@ -106,7 +198,7 @@ class App extends StatelessWidget {
                 if (message == null) {
                   return;
                 }
-                _messengerKey.currentState
+                App._messengerKey.currentState
                   ?..hideCurrentSnackBar()
                   ..showSnackBar(SnackBar(content: Text(message)));
                 context.read<TransferBloc>().add(
@@ -116,7 +208,7 @@ class App extends StatelessWidget {
             ),
           ],
           child: MaterialApp.router(
-            scaffoldMessengerKey: _messengerKey,
+            scaffoldMessengerKey: App._messengerKey,
             title: 'Tranzo',
             debugShowCheckedModeBanner: false,
             routerConfig: AppRouter.router,

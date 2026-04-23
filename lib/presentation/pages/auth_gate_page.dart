@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'dart:async';
 
+import '../../core/network/network_info.dart';
+import '../../di/injection_container.dart';
 import '../bloc/auth/auth_bloc.dart';
 import '../bloc/auth/auth_event.dart';
 import '../bloc/auth/auth_state.dart';
+import '../widgets/connectivity_ui.dart';
 
 class AuthGatePage extends StatefulWidget {
   const AuthGatePage({super.key});
@@ -19,6 +23,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
   late final TextEditingController _otpController;
   late final FocusNode _otpFocusNode;
   Timer? _resendTimer;
+  late final ConnectivityUiController _connectivity;
   int _resendSecondsRemaining = 0;
 
   @override
@@ -27,10 +32,17 @@ class _AuthGatePageState extends State<AuthGatePage> {
     _emailController = TextEditingController();
     _otpController = TextEditingController();
     _otpFocusNode = FocusNode();
+    _connectivity = ConnectivityUiController(networkInfo: sl<NetworkInfo>());
+    _connectivity.initialize(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   @override
   void dispose() {
+    _connectivity.dispose();
     _resendTimer?.cancel();
     _emailController.dispose();
     _otpController.dispose();
@@ -59,6 +71,16 @@ class _AuthGatePageState extends State<AuthGatePage> {
         _resendSecondsRemaining -= 1;
       });
     });
+  }
+
+  bool _isLikelyNetworkError(String message) {
+    final String normalized = message.toLowerCase();
+    return normalized.contains('socketexception') ||
+        normalized.contains('failed host lookup') ||
+        normalized.contains('network') ||
+        normalized.contains('timeout') ||
+        normalized.contains('timed out') ||
+        normalized.contains('connection');
   }
 
   @override
@@ -91,6 +113,9 @@ class _AuthGatePageState extends State<AuthGatePage> {
                   if (error == null) {
                     return;
                   }
+                  if (_connectivity.isOffline && _isLikelyNetworkError(error)) {
+                    return;
+                  }
                   ScaffoldMessenger.of(context)
                     ..hideCurrentSnackBar()
                     ..showSnackBar(SnackBar(content: Text(error)));
@@ -104,8 +129,16 @@ class _AuthGatePageState extends State<AuthGatePage> {
                   final bool resendCoolingDown = _resendSecondsRemaining > 0;
                   final bool emailFieldEnabled = !sendingOtp && !verifyingOtp;
                   final bool otpFieldEnabled = !verifyingOtp;
+                  final bool hasEmail = _emailController.text.trim().isNotEmpty;
+                  final bool hasOtp = _otpController.text.trim().length == 6;
                   final String pendingEmail =
                       state.pendingEmail ?? _emailController.text.trim();
+                  final bool canSendCode =
+                      !sendingOtp &&
+                      !verifyingOtp &&
+                      !(otpStep && resendCoolingDown) &&
+                      hasEmail;
+                  final bool canVerifyCode = !verifyingOtp && hasOtp;
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -119,6 +152,20 @@ class _AuthGatePageState extends State<AuthGatePage> {
                         'Use email OTP to enable secure transfer sessions.',
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
+                      if (_connectivity.isOffline ||
+                          _connectivity.isReconnecting) ...<Widget>[
+                        const SizedBox(height: 14),
+                        ConnectivityHintCard(
+                          isOffline: _connectivity.isOffline,
+                          isReconnecting: _connectivity.isReconnecting,
+                          offlineTitle: 'You are offline',
+                          offlineSubtitle:
+                              'Sign-in actions are paused until connection is restored.',
+                          reconnectTitle: 'Back online',
+                          reconnectSubtitle:
+                              'You can now request or verify your OTP.',
+                        ),
+                      ],
                       const SizedBox(height: 18),
                       TextField(
                         controller: _emailController,
@@ -132,18 +179,22 @@ class _AuthGatePageState extends State<AuthGatePage> {
                       ),
                       const SizedBox(height: 10),
                       FilledButton(
-                        onPressed:
-                            sendingOtp ||
-                                verifyingOtp ||
-                                (otpStep && resendCoolingDown)
-                            ? null
-                            : () {
+                        onPressed: canSendCode
+                            ? () {
+                                if (_connectivity.isOffline) {
+                                  showOfflineActionSnackBar(
+                                    context,
+                                    actionLabel: 'send code',
+                                  );
+                                  return;
+                                }
                                 context.read<AuthBloc>().add(
                                   AuthEmailOtpRequested(
                                     email: _emailController.text,
                                   ),
                                 );
-                              },
+                              }
+                            : null,
                         child: sendingOtp
                             ? const SizedBox(
                                 width: 20,
@@ -176,16 +227,23 @@ class _AuthGatePageState extends State<AuthGatePage> {
                         ),
                         const SizedBox(height: 10),
                         FilledButton.tonal(
-                          onPressed: verifyingOtp
-                              ? null
-                              : () {
+                          onPressed: canVerifyCode
+                              ? () {
+                                  if (_connectivity.isOffline) {
+                                    showOfflineActionSnackBar(
+                                      context,
+                                      actionLabel: 'verify code',
+                                    );
+                                    return;
+                                  }
                                   context.read<AuthBloc>().add(
                                     AuthEmailOtpVerified(
                                       email: pendingEmail,
                                       otpCode: _otpController.text,
                                     ),
                                   );
-                                },
+                                }
+                              : null,
                           child: verifyingOtp
                               ? const SizedBox(
                                   width: 20,

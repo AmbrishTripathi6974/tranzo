@@ -44,7 +44,7 @@ final class TransferErrorUiMapper {
     final String explicit = error.message.trim();
     switch (error.code) {
       case AppErrorCode.networkDisconnected:
-        return "You're disconnected from the network. Transfer paused and will resume when connection is back.";
+        return 'Connection issue detected. Transfer paused and will retry automatically.';
       case AppErrorCode.networkTimeout:
         return 'Network is slow right now. Transfer timed out and will retry automatically.';
       case AppErrorCode.networkUnstable:
@@ -73,7 +73,7 @@ final class TransferErrorUiMapper {
   static String _messageFromUnknown(String raw) {
     final String normalized = raw.toLowerCase();
     if (_isDisconnected(normalized)) {
-      return "You're disconnected from the network. Transfer paused and will resume when connection is back.";
+      return 'Connection issue detected. Transfer paused and will retry automatically.';
     }
     if (_isTimeout(normalized)) {
       return 'Network is slow right now. Transfer timed out and will retry automatically.';

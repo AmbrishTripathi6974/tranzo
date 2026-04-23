@@ -35,11 +35,6 @@ final class PermissionServiceImpl implements PermissionService {
       return PermissionState.granted;
     }
 
-    final PermissionStatus legacyStatus = await Permission.storage.request();
-    if (legacyStatus.isGranted) {
-      return PermissionState.granted;
-    }
-
     final List<PermissionStatus> mediaStatuses =
         await <Permission>[
           Permission.photos,
@@ -52,10 +47,9 @@ final class PermissionServiceImpl implements PermissionService {
     if (mediaStatuses.any((PermissionStatus status) => status.isGranted)) {
       return PermissionState.granted;
     }
-    if (legacyStatus.isPermanentlyDenied ||
-        mediaStatuses.any(
-          (PermissionStatus status) => status.isPermanentlyDenied,
-        )) {
+    if (mediaStatuses.any(
+      (PermissionStatus status) => status.isPermanentlyDenied,
+    )) {
       return PermissionState.permanentlyDenied;
     }
     return PermissionState.denied;

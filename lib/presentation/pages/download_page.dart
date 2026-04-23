@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../core/network/network_info.dart';
+import '../../di/injection_container.dart';
 import '../../domain/entities/incoming_transfer_offer.dart';
 import '../../domain/entities/transfer_lifecycle_signal.dart';
 import '../bloc/transfer/transfer_bloc.dart';
 import '../bloc/transfer/transfer_event.dart';
 import '../bloc/transfer/transfer_state.dart';
+import '../widgets/connectivity_ui.dart';
 
 class DownloadPage extends StatefulWidget {
   const DownloadPage({super.key});
@@ -15,6 +18,25 @@ class DownloadPage extends StatefulWidget {
 }
 
 class _DownloadPageState extends State<DownloadPage> {
+  late final ConnectivityUiController _connectivity;
+
+  @override
+  void initState() {
+    super.initState();
+    _connectivity = ConnectivityUiController(networkInfo: sl<NetworkInfo>());
+    _connectivity.initialize(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _connectivity.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -30,6 +52,20 @@ class _DownloadPageState extends State<DownloadPage> {
                   state.activeTransferId != null);
           return Column(
             children: <Widget>[
+              if (_connectivity.isOffline || _connectivity.isReconnecting)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: ConnectivityHintCard(
+                    isOffline: _connectivity.isOffline,
+                    isReconnecting: _connectivity.isReconnecting,
+                    offlineTitle: 'You are offline',
+                    offlineSubtitle:
+                        'Incoming transfers are paused and will resume when connection is back.',
+                    reconnectTitle: 'Back online, resuming downloads',
+                    reconnectSubtitle:
+                        'Waiting downloads are resuming automatically.',
+                  ),
+                ),
               if (showTopDownloadProgress)
                 LinearProgressIndicator(
                   value: state.progress.clamp(0.0, 1.0),
@@ -53,10 +89,13 @@ class _DownloadPageState extends State<DownloadPage> {
                             1.0,
                           )
                         : null;
-                    final String statusLabel = _statusLabelForTransfer(
+                    final _DownloadStatusPresentation statusPresentation =
+                        _statusPresentationForTransfer(
                       state: state,
                       transfer: transfer,
                       isActiveDownload: isActiveDownload,
+                      isOffline: _connectivity.isOffline,
+                      isReconnecting: _connectivity.isReconnecting,
                     );
                     return Card(
                       clipBehavior: Clip.antiAlias,
@@ -101,14 +140,16 @@ class _DownloadPageState extends State<DownloadPage> {
                                     vertical: 5,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.secondaryContainer,
+                                    color: statusPresentation.backgroundColor,
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                   child: Text(
-                                    statusLabel,
-                                    style: Theme.of(context).textTheme.labelMedium,
+                                    statusPresentation.label,
+                                    style: Theme.of(context).textTheme.labelMedium
+                                        ?.copyWith(
+                                          color: statusPresentation.foregroundColor,
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                   ),
                                 ),
                               ],
@@ -128,7 +169,8 @@ class _DownloadPageState extends State<DownloadPage> {
                                     ).colorScheme.onSurfaceVariant,
                                   ),
                             ),
-                            if (isActiveDownload) ...<Widget>[
+                            if (isActiveDownload &&
+                                !_connectivity.isOffline) ...<Widget>[
                               const SizedBox(height: 12),
                               LinearProgressIndicator(value: progressValue),
                               const SizedBox(height: 6),
@@ -175,6 +217,13 @@ class _DownloadPageState extends State<DownloadPage> {
                                                 ))
                                         ? null
                                         : () async {
+                                            if (_connectivity.isOffline) {
+                                              showOfflineActionSnackBar(
+                                                context,
+                                                actionLabel: 'download',
+                                              );
+                                              return;
+                                            }
                                             final TransferBloc transferBloc =
                                                 context.read<TransferBloc>();
                                             if (transfer.requiresApproval) {
@@ -329,35 +378,69 @@ class _DownloadPageState extends State<DownloadPage> {
     return '$pct%';
   }
 
-  String _statusLabelForTransfer({
+  _DownloadStatusPresentation _statusPresentationForTransfer({
     required TransferState state,
     required IncomingTransferOffer transfer,
     required bool isActiveDownload,
+    required bool isOffline,
+    required bool isReconnecting,
   }) {
+    if (isOffline &&
+        (isActiveDownload || _isTransferDownloadableOrActive(transfer))) {
+      return _DownloadStatusPresentation(
+        label: 'Paused (offline)',
+        backgroundColor: Colors.orange.shade50,
+        foregroundColor: Colors.orange.shade900,
+      );
+    }
+    if (isReconnecting &&
+        (isActiveDownload || _isTransferDownloadableOrActive(transfer))) {
+      return _DownloadStatusPresentation(
+        label: 'Resuming...',
+        backgroundColor: Colors.green.shade50,
+        foregroundColor: Colors.green.shade800,
+      );
+    }
     if (isActiveDownload) {
-      return 'Receiving…';
+      return _DownloadStatusPresentation(
+        label: 'Receiving…',
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+      );
     }
     if (transfer.usesTransfersV2) {
       final String s = (transfer.cloudStatus ?? '').toLowerCase();
       final int? cloudPct = transfer.cloudProgressPercent;
       if (s == 'uploading' && cloudPct != null && cloudPct >= 100) {
-        return 'Finalizing upload…';
+        return _DownloadStatusPresentation(
+          label: 'Finalizing upload…',
+          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+        );
       }
       switch (s) {
         case 'queued':
-          return 'Waiting…';
+          return _defaultDownloadStatus('Waiting…');
         case 'uploading':
-          return 'Sender uploading…';
+          return _defaultDownloadStatus('Sender uploading…');
         case 'uploaded':
-          return 'Ready to download';
+          return _defaultDownloadStatus('Ready to download');
         case 'downloading':
-          return 'Receiving…';
+          return _defaultDownloadStatus('Receiving…');
         case 'completed':
-          return 'Done';
+          return _DownloadStatusPresentation(
+            label: 'Done',
+            backgroundColor: Colors.green.shade50,
+            foregroundColor: Colors.green.shade800,
+          );
         case 'failed':
-          return 'Failed';
+          return _DownloadStatusPresentation(
+            label: 'Failed',
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
+          );
         case 'cancelled':
-          return 'Cancelled';
+          return _defaultDownloadStatus('Cancelled');
         default:
           break;
       }
@@ -365,20 +448,45 @@ class _DownloadPageState extends State<DownloadPage> {
     final signal =
         state.lifecycleSignalsByTransferId[transfer.transferId];
     if (signal == null) {
-      return 'Pending';
+      return _defaultDownloadStatus('Pending');
     }
     switch (signal.event) {
       case TransferLifecycleEventType.transferCompleted:
-        return 'Downloaded';
+        return _DownloadStatusPresentation(
+          label: 'Downloaded',
+          backgroundColor: Colors.green.shade50,
+          foregroundColor: Colors.green.shade800,
+        );
       case TransferLifecycleEventType.transferFailed:
-        return 'Failed';
+        return _DownloadStatusPresentation(
+          label: 'Failed',
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
+        );
       case TransferLifecycleEventType.transferRejected:
-        return 'Cancelled';
+        return _defaultDownloadStatus('Cancelled');
       case TransferLifecycleEventType.transferAccepted:
-        return 'Pending';
+        return _defaultDownloadStatus('Pending');
       case TransferLifecycleEventType.transferStarted:
-        return 'Pending';
+        return _defaultDownloadStatus('Pending');
     }
+  }
+
+  _DownloadStatusPresentation _defaultDownloadStatus(String label) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return _DownloadStatusPresentation(
+      label: label,
+      backgroundColor: scheme.secondaryContainer,
+      foregroundColor: scheme.onSecondaryContainer,
+    );
+  }
+
+  bool _isTransferDownloadableOrActive(IncomingTransferOffer transfer) {
+    if (!transfer.usesTransfersV2) {
+      return true;
+    }
+    final String cloud = (transfer.cloudStatus ?? '').toLowerCase();
+    return cloud == 'uploaded' || cloud == 'downloading' || cloud == 'queued';
   }
 
   IconData _fileIcon(String fileName) {
@@ -441,3 +549,16 @@ class _DownloadPageState extends State<DownloadPage> {
     return '$formatted ${units[unitIndex]}';
   }
 }
+
+class _DownloadStatusPresentation {
+  const _DownloadStatusPresentation({
+    required this.label,
+    required this.backgroundColor,
+    required this.foregroundColor,
+  });
+
+  final String label;
+  final Color backgroundColor;
+  final Color foregroundColor;
+}
+

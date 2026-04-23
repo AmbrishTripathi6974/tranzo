@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/network/network_info.dart';
+import '../../di/injection_container.dart';
 import '../../domain/entities/selected_transfer_file.dart';
 import '../../domain/entities/transfer_batch_progress.dart';
 import '../bloc/profile/profile_bloc.dart';
@@ -12,6 +14,7 @@ import '../bloc/profile/profile_state.dart';
 import '../bloc/transfer/transfer_bloc.dart';
 import '../bloc/transfer/transfer_event.dart';
 import '../bloc/transfer/transfer_state.dart';
+import '../widgets/connectivity_ui.dart';
 
 class UploadPage extends StatelessWidget {
   const UploadPage({super.key});
@@ -51,11 +54,18 @@ class _UploadForm extends StatefulWidget {
 
 class _UploadFormState extends State<_UploadForm> {
   late final TextEditingController _recipientController;
+  late final ConnectivityUiController _connectivity;
 
   @override
   void initState() {
     super.initState();
     _recipientController = TextEditingController();
+    _connectivity = ConnectivityUiController(networkInfo: sl<NetworkInfo>());
+    _connectivity.initialize(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -75,6 +85,7 @@ class _UploadFormState extends State<_UploadForm> {
 
   @override
   void dispose() {
+    _connectivity.dispose();
     _recipientController.dispose();
     super.dispose();
   }
@@ -202,6 +213,10 @@ class _UploadFormState extends State<_UploadForm> {
                 !localOnlyMode &&
                 selected.isNotEmpty &&
                 transferState.uploadRecipientCodeDraft.trim().isNotEmpty;
+            final bool hasTransferContext =
+                selected.isNotEmpty ||
+                transferState.batchProgressByFileId.isNotEmpty ||
+                transferState.status == TransferStatus.loading;
 
             final Widget content = Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -310,17 +325,42 @@ class _UploadFormState extends State<_UploadForm> {
                 const SizedBox(height: 10),
                 FilledButton.icon(
                   onPressed: canSend
-                      ? () => _startUpload(context, transferState)
+                      ? () => _onStartTransferPressed(context, transferState)
                       : null,
-                  icon: const Icon(Icons.cloud_upload_rounded),
-                  label: const Text('Start transfer'),
+                  icon: Icon(
+                    _connectivity.isOffline
+                        ? Icons.wifi_off_outlined
+                        : Icons.cloud_upload_rounded,
+                  ),
+                  label: Text(
+                    _connectivity.isOffline ? 'You are offline' : 'Start transfer',
+                  ),
                   style: FilledButton.styleFrom(
+                    backgroundColor: _connectivity.isOffline
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.primary,
+                    foregroundColor: _connectivity.isOffline
+                        ? theme.colorScheme.onError
+                        : theme.colorScheme.onPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                 ),
+                if ((_connectivity.isOffline || _connectivity.isReconnecting) &&
+                    hasTransferContext) ...<Widget>[
+                  const SizedBox(height: 10),
+                  ConnectivityHintCard(
+                    isOffline: _connectivity.isOffline,
+                    isReconnecting: _connectivity.isReconnecting,
+                    offlineTitle: 'You are offline',
+                    offlineSubtitle:
+                        'Uploads are paused and queued safely until connection is restored.',
+                    reconnectTitle: 'Back online, resuming transfers',
+                    reconnectSubtitle: 'Queued uploads are resuming automatically.',
+                  ),
+                ],
                 if (localOnlyMode) ...<Widget>[
                   const SizedBox(height: 8),
                   Text(
@@ -426,6 +466,8 @@ class _UploadFormState extends State<_UploadForm> {
                             return _TransferFileRow(
                               file: file,
                               progress: progress,
+                              isOffline: _connectivity.isOffline,
+                              isReconnecting: _connectivity.isReconnecting,
                               canRemove: canEditSelection,
                               onRemove: () {
                                 context.read<TransferBloc>().add(
@@ -506,22 +548,12 @@ class _UploadFormState extends State<_UploadForm> {
       return true;
     }
 
-    PermissionStatus storageStatus = await Permission.storage.status;
-    if (!storageStatus.isGranted) {
-      storageStatus = await Permission.storage.request();
-    }
-    if (storageStatus.isGranted) {
-      return true;
-    }
-
     if (!context.mounted) {
       return false;
     }
-    final bool permanentlyDenied =
-        storageStatus.isPermanentlyDenied ||
-        mediaStatuses.values.any(
-          (PermissionStatus status) => status.isPermanentlyDenied,
-        );
+    final bool permanentlyDenied = mediaStatuses.values.any(
+      (PermissionStatus status) => status.isPermanentlyDenied,
+    );
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -555,18 +587,33 @@ class _UploadFormState extends State<_UploadForm> {
       ),
     );
   }
+
+  void _onStartTransferPressed(
+    BuildContext context,
+    TransferState transferState,
+  ) {
+    if (_connectivity.isOffline) {
+      showOfflineActionSnackBar(context, actionLabel: 'start transfer');
+      return;
+    }
+    _startUpload(context, transferState);
+  }
 }
 
 class _TransferFileRow extends StatelessWidget {
   const _TransferFileRow({
     required this.file,
     required this.progress,
+    required this.isOffline,
+    required this.isReconnecting,
     required this.canRemove,
     required this.onRemove,
   });
 
   final SelectedTransferFile file;
   final TransferFileProgress? progress;
+  final bool isOffline;
+  final bool isReconnecting;
   final bool canRemove;
   final VoidCallback onRemove;
 
@@ -574,9 +621,12 @@ class _TransferFileRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final double? progressValue = progress?.progress;
-    final String statusLabel = progress == null
-        ? 'Queued'
-        : '${(progressValue! * 100).clamp(0, 100).toStringAsFixed(0)}%';
+    final _TransferRowStatusPresentation status = _statusPresentation(
+      theme,
+      progress,
+      isOffline: isOffline,
+      isReconnecting: isReconnecting,
+    );
 
     return Material(
       color: theme.colorScheme.surfaceContainerHighest,
@@ -619,14 +669,24 @@ class _TransferFileRow extends StatelessWidget {
                 const SizedBox(width: 12),
                 ConstrainedBox(
                   constraints: const BoxConstraints(minWidth: 58),
-                  child: Text(
-                    statusLabel,
-                    textAlign: TextAlign.end,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: status.backgroundColor,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      status.label,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: status.foregroundColor,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -644,7 +704,9 @@ class _TransferFileRow extends StatelessWidget {
                   ),
               ],
             ),
-            if (progressValue != null && progressValue < 1) ...<Widget>[
+            if (progressValue != null &&
+                progressValue > 0 &&
+                progressValue < 1) ...<Widget>[
               const SizedBox(height: 8),
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
@@ -660,6 +722,81 @@ class _TransferFileRow extends StatelessWidget {
     );
   }
 }
+
+class _TransferRowStatusPresentation {
+  const _TransferRowStatusPresentation({
+    required this.label,
+    required this.backgroundColor,
+    required this.foregroundColor,
+  });
+
+  final String label;
+  final Color backgroundColor;
+  final Color foregroundColor;
+}
+
+_TransferRowStatusPresentation _statusPresentation(
+  ThemeData theme,
+  TransferFileProgress? progress, {
+  required bool isOffline,
+  required bool isReconnecting,
+}) {
+  if (isOffline &&
+      progress != null &&
+      progress.status != TransferFileProgressStatus.completed &&
+      progress.status != TransferFileProgressStatus.failed) {
+    return _TransferRowStatusPresentation(
+      label: 'Paused (offline)',
+      backgroundColor: Colors.orange.shade50,
+      foregroundColor: Colors.orange.shade900,
+    );
+  }
+  if (isReconnecting &&
+      progress != null &&
+      progress.status != TransferFileProgressStatus.completed &&
+      progress.status != TransferFileProgressStatus.failed) {
+    return _TransferRowStatusPresentation(
+      label: 'Resuming...',
+      backgroundColor: Colors.green.shade50,
+      foregroundColor: Colors.green.shade800,
+    );
+  }
+  if (progress == null) {
+    return _TransferRowStatusPresentation(
+      label: 'Queued',
+      backgroundColor: theme.colorScheme.secondaryContainer,
+      foregroundColor: theme.colorScheme.onSecondaryContainer,
+    );
+  }
+  switch (progress.status) {
+    case TransferFileProgressStatus.pending:
+      return _TransferRowStatusPresentation(
+        label: 'Queued',
+        backgroundColor: theme.colorScheme.secondaryContainer,
+        foregroundColor: theme.colorScheme.onSecondaryContainer,
+      );
+    case TransferFileProgressStatus.uploading:
+      final String percent = '${(progress.progress * 100).clamp(0, 100).round()}%';
+      return _TransferRowStatusPresentation(
+        label: percent,
+        backgroundColor: theme.colorScheme.primaryContainer,
+        foregroundColor: theme.colorScheme.onPrimaryContainer,
+      );
+    case TransferFileProgressStatus.completed:
+      return _TransferRowStatusPresentation(
+        label: 'Done',
+        backgroundColor: Colors.green.shade50,
+        foregroundColor: Colors.green.shade800,
+      );
+    case TransferFileProgressStatus.failed:
+      return _TransferRowStatusPresentation(
+        label: 'Failed',
+        backgroundColor: theme.colorScheme.errorContainer,
+        foregroundColor: theme.colorScheme.onErrorContainer,
+      );
+  }
+}
+
 
 class _UploadEmptyState extends StatelessWidget {
   const _UploadEmptyState({required this.theme});

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/network/network_info.dart';
+import '../../di/injection_container.dart';
 import '../../domain/entities/transfer_entity.dart';
 import '../../domain/entities/transfer_status.dart' as domain;
 import '../bloc/history/history_bloc.dart';
@@ -25,19 +27,67 @@ class TransferHomePage extends StatefulWidget {
 }
 
 class _TransferHomePageState extends State<TransferHomePage> {
+  static const Duration _reconnectBannerDuration = Duration(seconds: 10);
+
   bool _postTransferSkeleton = false;
   Timer? _postTransferSkeletonTimer;
+  Timer? _reconnectedTimer;
+  StreamSubscription<NetworkConnectionType>? _networkSubscription;
+  NetworkConnectionType _networkConnectionType = NetworkConnectionType.other;
+  bool _recentlyReconnected = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadHistoryIfReady());
+    _initConnectivityStatus();
   }
 
   @override
   void dispose() {
+    _networkSubscription?.cancel();
     _postTransferSkeletonTimer?.cancel();
+    _reconnectedTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _initConnectivityStatus() async {
+    final NetworkInfo networkInfo = sl<NetworkInfo>();
+    final NetworkConnectionType initialType = await networkInfo.connectionType;
+    if (mounted) {
+      setState(() => _networkConnectionType = initialType);
+    }
+    _networkSubscription = networkInfo.onConnectionChanged.listen((
+      NetworkConnectionType connectionType,
+    ) {
+      if (!mounted || _networkConnectionType == connectionType) {
+        return;
+      }
+      final bool wasOffline = _networkConnectionType == NetworkConnectionType.none;
+      final bool nowOnline = connectionType != NetworkConnectionType.none;
+      if (wasOffline && nowOnline) {
+        _reconnectedTimer?.cancel();
+        setState(() {
+          _networkConnectionType = connectionType;
+          _recentlyReconnected = true;
+        });
+        _reconnectedTimer = Timer(_reconnectBannerDuration, () {
+          if (!mounted) {
+            return;
+          }
+          setState(() => _recentlyReconnected = false);
+        });
+        return;
+      }
+
+      setState(() {
+        _networkConnectionType = connectionType;
+        if (connectionType == NetworkConnectionType.none) {
+          _reconnectedTimer?.cancel();
+          _recentlyReconnected = false;
+        }
+      });
+    });
   }
 
   void _schedulePostTransferSkeleton() {
@@ -115,6 +165,16 @@ class _TransferHomePageState extends State<TransferHomePage> {
         final String age = _relativeTime(context, latest.createdAt);
         return '$role: $fileName · $age · $statusLabel';
     }
+  }
+
+  String? _networkDetailMessage() {
+    if (_networkConnectionType == NetworkConnectionType.none) {
+      return 'Transfer is queued and will continue when connection is back.';
+    }
+    if (_recentlyReconnected) {
+      return 'Connection restored. Open Transfer to retry or continue queued uploads.';
+    }
+    return null;
   }
 
   String _relativeTime(BuildContext context, DateTime value) {
@@ -218,17 +278,28 @@ class _TransferHomePageState extends State<TransferHomePage> {
                             state.status == TransferStatus.loading ||
                             _postTransferSkeleton ||
                             historyDataLoading;
-                        final String? detailMessage = _statusDetailMessage(
+                        final String? transferDetailMessage = _statusDetailMessage(
                           context: context,
                           transferState: state,
                           historyState: historyState,
                           currentUserId: currentUserId,
                         );
+                        final String? networkDetailMessage =
+                            _networkDetailMessage();
+                        final String? detailMessage =
+                            networkDetailMessage ?? transferDetailMessage;
                         return TranzoSkeleton.wrap(
                           context,
                           enabled: showStatusSkeleton,
                           child: TransferStatusCard(
                             status: state.status,
+                            isOffline:
+                                _networkConnectionType ==
+                                NetworkConnectionType.none,
+                            isReconnected:
+                                _recentlyReconnected &&
+                                _networkConnectionType !=
+                                    NetworkConnectionType.none,
                             detailMessage: showStatusSkeleton &&
                                     (detailMessage == null ||
                                         detailMessage.trim().isEmpty)
