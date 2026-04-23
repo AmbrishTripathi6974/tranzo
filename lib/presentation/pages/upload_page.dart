@@ -86,7 +86,6 @@ class _UploadFormState extends State<_UploadForm> {
       listenWhen: (TransferState previous, TransferState current) =>
           previous.pendingUploadConfirmation !=
               current.pendingUploadConfirmation ||
-          previous.uiWarningMessage != current.uiWarningMessage ||
           previous.uploadDraftSelectionNotice !=
               current.uploadDraftSelectionNotice,
       listener: (BuildContext context, TransferState state) async {
@@ -99,14 +98,6 @@ class _UploadFormState extends State<_UploadForm> {
           );
           return;
         }
-        if (state.uiWarningMessage != null) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(state.uiWarningMessage!)));
-          context.read<TransferBloc>().add(const TransferUiEffectConsumed());
-          return;
-        }
-
         final PendingUploadConfirmation? pending =
             state.pendingUploadConfirmation;
         if (pending == null) {

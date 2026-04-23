@@ -156,7 +156,7 @@ class TransferService {
     if (userId == null || userId.trim().isEmpty) {
       throw const AppException(
         'Cloud session expired. Sign in again before sending transfers.',
-        code: AppErrorCode.invalidRecipientCode,
+        code: AppErrorCode.authExpired,
       );
     }
     return userId;
@@ -266,7 +266,20 @@ class TransferService {
     if (_isRlsViolation(message)) {
       return const AppException(
         'Cloud session is not authorized for transfer writes. Re-authenticate and retry.',
-        code: AppErrorCode.invalidRecipientCode,
+        code: AppErrorCode.permissionDenied,
+      );
+    }
+    final String normalized = message.toLowerCase();
+    if (_looksLikeDisconnected(normalized)) {
+      return const AppException(
+        'Network disconnected during cloud request.',
+        code: AppErrorCode.networkDisconnected,
+      );
+    }
+    if (_looksLikeTimeout(normalized)) {
+      return const AppException(
+        'Cloud request timed out.',
+        code: AppErrorCode.networkTimeout,
       );
     }
     return AppException(message.isEmpty ? fallbackMessage : message);
@@ -284,13 +297,25 @@ class TransferService {
         normalized.contains('401')) {
       return const AppException(
         'Cloud auth session expired before upload. Sign in again and retry.',
-        code: AppErrorCode.invalidRecipientCode,
+        code: AppErrorCode.authExpired,
+      );
+    }
+    if (_looksLikeDisconnected(normalized)) {
+      return const AppException(
+        'Network disconnected during chunk transfer.',
+        code: AppErrorCode.networkDisconnected,
+      );
+    }
+    if (_looksLikeTimeout(normalized)) {
+      return const AppException(
+        'Chunk transfer timed out.',
+        code: AppErrorCode.networkTimeout,
       );
     }
     if (message.toLowerCase().contains(_storageObjectsRlsHint)) {
       return const AppException(
         'Cloud storage policy blocked upload. Verify transfer storage policies and sender session, then retry.',
-        code: AppErrorCode.invalidRecipientCode,
+        code: AppErrorCode.permissionDenied,
       );
     }
     return AppException(message.isEmpty ? fallbackMessage : message);
@@ -326,6 +351,22 @@ class TransferService {
     final String normalized = message.toLowerCase();
     return normalized.contains(_postgrestRlsHint) ||
         normalized.contains(_storageObjectsRlsHint);
+  }
+
+  bool _looksLikeDisconnected(String normalized) {
+    return normalized.contains('software caused connection abort') ||
+        normalized.contains('connection abort') ||
+        normalized.contains('failed host lookup') ||
+        normalized.contains('network is unreachable') ||
+        normalized.contains('socketexception') ||
+        normalized.contains('connection reset') ||
+        normalized.contains('connection refused');
+  }
+
+  bool _looksLikeTimeout(String normalized) {
+    return normalized.contains('timed out') ||
+        normalized.contains('timeout') ||
+        normalized.contains('deadline exceeded');
   }
 
   Future<bool> _tryRefreshSession() async {

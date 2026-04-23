@@ -1542,7 +1542,9 @@ class TransferRepositoryImpl implements TransferRepository {
           _clearRetryState(transferUuid);
           await _backgroundRuntimeService.cancelRetry(transferId: transferUuid);
         } catch (error) {
-          final String reason = error.toString();
+          final String reason = error is AppException
+              ? error.message
+              : error.toString();
           if (activeTransferId != null) {
             await _scheduleBackgroundRetryIfRecoverable(
               transferId: activeTransferId,
@@ -2356,12 +2358,7 @@ class TransferRepositoryImpl implements TransferRepository {
               },
             );
           } on DioException catch (e) {
-            throw AppException(
-              e.message?.trim().isNotEmpty == true
-                  ? e.message!.trim()
-                  : 'Network download failed.',
-              code: AppErrorCode.chunkTransferFailed,
-            );
+            throw _mapDioChunkDownloadException(e);
           }
           chunk = await chunkFile.readAsBytes();
         } else {
@@ -2430,7 +2427,7 @@ class TransferRepositoryImpl implements TransferRepository {
     await _backgroundRuntimeService.stopActiveTransfer(transferId: transferId);
     throw const AppException(
       'Network unavailable. Transfer paused and queued for retry.',
-      code: AppErrorCode.chunkTransferFailed,
+      code: AppErrorCode.networkDisconnected,
     );
   }
 
@@ -2440,6 +2437,9 @@ class TransferRepositoryImpl implements TransferRepository {
     }
     return switch (reason.code) {
       AppErrorCode.chunkTransferFailed => true,
+      AppErrorCode.networkDisconnected => true,
+      AppErrorCode.networkTimeout => true,
+      AppErrorCode.networkUnstable => true,
       AppErrorCode.unknown => true,
       AppErrorCode.hashMismatch => false,
       AppErrorCode.duplicateFile => false,
@@ -2447,7 +2447,50 @@ class TransferRepositoryImpl implements TransferRepository {
       AppErrorCode.insecureEndpoint => false,
       AppErrorCode.invalidRecipientCode => false,
       AppErrorCode.invalidReceiver => false,
+      AppErrorCode.authExpired => false,
+      AppErrorCode.permissionDenied => false,
+      AppErrorCode.cancelledByUser => false,
     };
+  }
+
+  AppException _mapDioChunkDownloadException(DioException error) {
+    final String raw =
+        error.message?.trim().isNotEmpty == true
+        ? error.message!.trim()
+        : error.toString();
+    final String normalized = raw.toLowerCase();
+    if (error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        normalized.contains('timed out') ||
+        normalized.contains('timeout')) {
+      return const AppException(
+        'Chunk download timed out.',
+        code: AppErrorCode.networkTimeout,
+      );
+    }
+    if (error.type == DioExceptionType.cancel) {
+      return const AppException(
+        'Transfer cancelled by user.',
+        code: AppErrorCode.cancelledByUser,
+      );
+    }
+    if (error.type == DioExceptionType.connectionError ||
+        normalized.contains('software caused connection abort') ||
+        normalized.contains('failed host lookup') ||
+        normalized.contains('socketexception') ||
+        normalized.contains('network is unreachable') ||
+        normalized.contains('connection reset') ||
+        normalized.contains('connection refused')) {
+      return const AppException(
+        'Network disconnected during download.',
+        code: AppErrorCode.networkDisconnected,
+      );
+    }
+    return AppException(
+      raw.isEmpty ? 'Network download failed.' : raw,
+      code: AppErrorCode.networkUnstable,
+    );
   }
 
   Future<void> _scheduleBackgroundRetryIfRecoverable({

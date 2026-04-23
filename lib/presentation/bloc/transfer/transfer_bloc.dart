@@ -143,10 +143,12 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       );
     } catch (error) {
       final String displayError = _toDisplayError(error);
+      final bool showInlineError = _shouldShowInlineError(error, displayError);
       emit(
         state.copyWith(
           status: TransferStatus.error,
-          errorMessage: displayError,
+          errorMessage: showInlineError ? displayError : null,
+          clearErrorMessage: !showInlineError,
           uiWarningMessage: displayError,
         ),
       );
@@ -181,10 +183,14 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
         files: event.files,
       );
     } catch (error) {
+      final String displayError = _toDisplayError(error);
+      final bool showInlineError = _shouldShowInlineError(error, displayError);
       emit(
         state.copyWith(
           status: TransferStatus.error,
-          errorMessage: _toDisplayError(error),
+          errorMessage: showInlineError ? displayError : null,
+          clearErrorMessage: !showInlineError,
+          uiWarningMessage: displayError,
         ),
       );
     }
@@ -365,6 +371,19 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
               break;
             }
           }
+          final String? allFailedDisplayMessage = allFailed
+              ? _toDisplayError(
+                  firstFailureMessage ??
+                      'Transfer failed before upload could start. Check connection and cloud permissions, then retry.',
+                )
+              : null;
+          final bool showInlineError = allFailedDisplayMessage == null
+              ? false
+              : _shouldShowInlineError(
+                  firstFailureMessage ??
+                      'Transfer failed before upload could start. Check connection and cloud permissions, then retry.',
+                  allFailedDisplayMessage,
+                );
           return state.copyWith(
             status: allFailed
                 ? TransferStatus.error
@@ -374,14 +393,10 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
             progress: total,
             batchSessionId: progress.sessionId,
             batchProgressByFileId: byId,
-            errorMessage: allFailed
-                ? (firstFailureMessage ??
-                      'Transfer failed before upload could start. Check connection and cloud permissions, then retry.')
-                : null,
-            clearErrorMessage: !allFailed,
+            errorMessage: showInlineError ? allFailedDisplayMessage : null,
+            clearErrorMessage: !showInlineError,
             uiWarningMessage: allFailed
-                ? (firstFailureMessage ??
-                      'Transfer failed before upload could start. Please fix the issue and tap Transfer again.')
+                ? allFailedDisplayMessage
                 : (hasPartialFailures
                       ? 'Some files failed to upload. Review file statuses and retry.'
                       : null),
@@ -398,10 +413,12 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       );
     } catch (error) {
       final String displayError = _toDisplayError(error);
+      final bool showInlineError = _shouldShowInlineError(error, displayError);
       emit(
         state.copyWith(
           status: TransferStatus.error,
-          errorMessage: displayError,
+          errorMessage: showInlineError ? displayError : null,
+          clearErrorMessage: !showInlineError,
           uiWarningMessage: displayError,
         ),
       );
@@ -562,10 +579,12 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       );
     } catch (error) {
       final String displayError = _toDisplayError(error);
+      final bool showInlineError = _shouldShowInlineError(error, displayError);
       emit(
         state.copyWith(
           status: TransferStatus.error,
-          errorMessage: displayError,
+          errorMessage: showInlineError ? displayError : null,
+          clearErrorMessage: !showInlineError,
           uiWarningMessage: displayError,
           clearActiveTransferId: true,
         ),
@@ -600,27 +619,29 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
   }
 
   String _toDisplayError(Object error) {
-    final String raw = error is AppException ? error.message : error.toString();
-    final String normalized = raw.toLowerCase();
-    final bool isRecipientCodePermissionIssue =
-        (normalized.contains('"code":"42501"') ||
-            normalized.contains("code':'42501") ||
-            normalized.contains('permission denied')) &&
-        normalized.contains('recipient_codes');
-    if (isRecipientCodePermissionIssue) {
-      return 'Cloud pairing is unavailable right now. Please reopen the app and try again.';
-    }
-    final bool isStoragePolicyBlocked =
-        normalized.contains('storage policy blocked upload') ||
-        (normalized.contains('row-level security policy') &&
-            normalized.contains('storage'));
-    if (isStoragePolicyBlocked) {
-      return 'Cloud upload is not authorized for this account right now. Reopen the app (or sign in again) and retry.';
-    }
+    return TransferErrorUiMapper.toUserMessage(error);
+  }
+
+  bool _shouldShowInlineError(Object error, String displayMessage) {
     if (error is AppException) {
-      return raw;
+      switch (error.code) {
+        case AppErrorCode.networkDisconnected:
+        case AppErrorCode.networkTimeout:
+        case AppErrorCode.networkUnstable:
+          return false;
+        default:
+          return true;
+      }
     }
-    return raw;
+    final String normalized = displayMessage.toLowerCase();
+    if (normalized.contains('disconnected from the network') ||
+        normalized.contains('timed out') ||
+        normalized.contains('connection is unstable') ||
+        normalized.contains('queued to retry') ||
+        normalized.contains('resume when connection is back')) {
+      return false;
+    }
+    return true;
   }
 
   @override
