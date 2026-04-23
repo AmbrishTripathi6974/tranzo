@@ -31,6 +31,8 @@ class _AuthGatePageState extends State<AuthGatePage> {
     super.initState();
     _emailController = TextEditingController();
     _otpController = TextEditingController();
+    _emailController.addListener(_onInputChanged);
+    _otpController.addListener(_onInputChanged);
     _otpFocusNode = FocusNode();
     _connectivity = ConnectivityUiController(networkInfo: sl<NetworkInfo>());
     _connectivity.initialize(() {
@@ -44,10 +46,19 @@ class _AuthGatePageState extends State<AuthGatePage> {
   void dispose() {
     _connectivity.dispose();
     _resendTimer?.cancel();
+    _emailController.removeListener(_onInputChanged);
+    _otpController.removeListener(_onInputChanged);
     _emailController.dispose();
     _otpController.dispose();
     _otpFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onInputChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
   }
 
   void _startResendCooldown() {
@@ -136,9 +147,11 @@ class _AuthGatePageState extends State<AuthGatePage> {
                   final bool canSendCode =
                       !sendingOtp &&
                       !verifyingOtp &&
+                      !_connectivity.isOffline &&
                       !(otpStep && resendCoolingDown) &&
                       hasEmail;
-                  final bool canVerifyCode = !verifyingOtp && hasOtp;
+                  final bool canVerifyCode =
+                      !verifyingOtp && !_connectivity.isOffline && hasOtp;
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
